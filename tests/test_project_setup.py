@@ -1,5 +1,6 @@
 """Unit tests verifying project setup, package imports, configuration, and logging."""
 
+import logging
 from pathlib import Path
 
 import pytest
@@ -35,10 +36,15 @@ def test_load_valid_configs():
     assert features_cfg["forecast_horizon_days"] == 7
     assert 28 in features_cfg["lags"]
     assert 28 in features_cfg["rolling_mean_windows"]
+    assert "day_of_week" in features_cfg["known_calendar_features"]
+    assert "activity_flag" in features_cfg["conditional_future_covariates"]
+    assert "discount" in features_cfg["conditional_future_covariates"]
+    assert "weather" in features_cfg["conditional_future_covariates"]
 
     training_cfg = load_config("training")
     assert training_cfg["random_seed"] == 42
     assert training_cfg["model_type"] == "LightGBM"
+    assert training_cfg["reproducibility"]["n_jobs"] == 2
     assert len(training_cfg["validation_folds"]) == 4
 
 
@@ -67,12 +73,56 @@ def test_empty_config_raises_value_error(tmp_path: Path):
     assert "empty" in str(exc_info.value).lower()
 
 
-def test_logging_setup():
-    """Verify logger setup, formatting, and handler instantiation."""
-    logger = setup_logging(level="DEBUG")
-    assert logger.level == 10  # logging.DEBUG
+def test_setup_logging_preserves_external_handlers():
+    """Verify that existing external root handlers remain untouched by setup_logging."""
+    root_logger = logging.getLogger()
+    external_handler = logging.NullHandler()
+    root_logger.addHandler(external_handler)
 
-    module_logger = get_logger("aarohan.test")
-    assert module_logger.name == "aarohan.test"
-    # Logger can emit messages without error
-    module_logger.info("Test message for logging verification")
+    try:
+        setup_logging(level="INFO")
+        assert external_handler in root_logger.handlers
+    finally:
+        root_logger.removeHandler(external_handler)
+        external_handler.close()
+
+
+def test_setup_logging_no_duplicates_on_repeated_calls():
+    """Verify that calling setup_logging repeatedly does not duplicate handlers."""
+    root_logger = logging.getLogger()
+    setup_logging(level="INFO")
+    count_first = sum(
+        1 for h in root_logger.handlers if getattr(h, "_aarohan_managed", False)
+    )
+    assert count_first == 1
+
+    setup_logging(level="DEBUG")
+    count_second = sum(
+        1 for h in root_logger.handlers if getattr(h, "_aarohan_managed", False)
+    )
+    assert count_second == 1
+
+
+def test_setup_logging_invalid_level_raises_value_error():
+    """Verify that an invalid logging level string raises a clear ValueError."""
+    with pytest.raises(ValueError, match="Invalid logging level"):
+        setup_logging(level="SUPER_VERBOSE")
+
+
+def test_setup_logging_file_output(tmp_path: Path):
+    """Verify that optional file logging writes structured log messages."""
+    log_file = tmp_path / "test_run.log"
+    setup_logging(level="INFO", log_file=log_file)
+
+    test_logger = get_logger("aarohan.test_file_output")
+    test_msg = "Verification message for file logging test"
+    test_logger.info(test_msg)
+
+    assert log_file.exists()
+    content = log_file.read_text(encoding="utf-8")
+    assert test_msg in content
+    assert "aarohan.test_file_output" in content
+    assert "INFO" in content
+
+    # Clean up file handler by resetting to console logging only
+    setup_logging(level="INFO")
