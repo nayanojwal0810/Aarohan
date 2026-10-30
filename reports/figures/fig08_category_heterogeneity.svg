@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #0f172a; }
+    .subtitle { font-size: 12px; fill: #64748b; }
+  </style>
+  <rect width="900" height="500" fill="#ffffff" rx="8"/>
+  <text x="140" y="32" class="title">Demand Heterogeneity: Top 10 Product Categories</text>
+  <text x="140" y="50" class="subtitle">Ranked by Total Observed Demand Index (with series mean demand and stockout rate annotated)</text>
+  <line x1="140.0" y1="70.0" x2="140.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="280.0" y1="70.0" x2="280.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="420.0" y1="70.0" x2="420.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="560.0" y1="70.0" x2="560.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="700.0" y1="70.0" x2="700.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="840.0" y1="70.0" x2="840.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="140" y="74.0" width="608.7" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="756.7" y="92.0" font-size="11" fill="#0f172a">1159.9k (Avg 1.18, Stkout 20.0%)</text>
+  <rect x="140" y="110.0" width="335.6" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="483.6" y="128.0" font-size="11" fill="#0f172a">639.5k (Avg 1.28, Stkout 19.8%)</text>
+  <rect x="140" y="146.0" width="247.9" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="395.9" y="164.0" font-size="11" fill="#0f172a">472.3k (Avg 0.73, Stkout 20.1%)</text>
+  <rect x="140" y="182.0" width="242.2" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="390.2" y="200.0" font-size="11" fill="#0f172a">461.6k (Avg 1.47, Stkout 25.8%)</text>
+  <rect x="140" y="218.0" width="241.0" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="389.0" y="236.0" font-size="11" fill="#0f172a">459.3k (Avg 1.80, Stkout 19.2%)</text>
+  <rect x="140" y="254.0" width="99.6" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="247.6" y="272.0" font-size="11" fill="#0f172a">189.8k (Avg 0.74, Stkout 21.8%)</text>
+  <rect x="140" y="290.0" width="97.8" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="245.8" y="308.0" font-size="11" fill="#0f172a">186.3k (Avg 1.04, Stkout 27.8%)</text>
+  <rect x="140" y="326.0" width="95.2" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="243.2" y="344.0" font-size="11" fill="#0f172a">181.5k (Avg 0.70, Stkout 17.8%)</text>
+  <rect x="140" y="362.0" width="66.1" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="214.1" y="380.0" font-size="11" fill="#0f172a">125.9k (Avg 0.60, Stkout 17.0%)</text>
+  <rect x="140" y="398.0" width="62.3" height="28.0" fill="#0284c7" rx="2"/>
+  <text x="210.3" y="416.0" font-size="11" fill="#0f172a">118.6k (Avg 0.69, Stkout 17.7%)</text>
+  <line x1="140.0" y1="70.0" x2="140.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="140.0" y1="430.0" x2="840.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="128" y="92.0" font-size="11" fill="#334155" text-anchor="end">Category 4</text>
+  <text x="128" y="128.0" font-size="11" fill="#334155" text-anchor="end">Category 20</text>
+  <text x="128" y="164.0" font-size="11" fill="#334155" text-anchor="end">Category 16</text>
+  <text x="128" y="200.0" font-size="11" fill="#334155" text-anchor="end">Category 29</text>
+  <text x="128" y="236.0" font-size="11" fill="#334155" text-anchor="end">Category 21</text>
+  <text x="128" y="272.0" font-size="11" fill="#334155" text-anchor="end">Category 10</text>
+  <text x="128" y="308.0" font-size="11" fill="#334155" text-anchor="end">Category 28</text>
+  <text x="128" y="344.0" font-size="11" fill="#334155" text-anchor="end">Category 8</text>
+  <text x="128" y="380.0" font-size="11" fill="#334155" text-anchor="end">Category 18</text>
+  <text x="128" y="416.0" font-size="11" fill="#334155" text-anchor="end">Category 31</text>
+  <text x="140.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">0k</text>
+  <text x="280.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">267k</text>
+  <text x="420.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">534k</text>
+  <text x="560.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">800k</text>
+  <text x="700.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">1067k</text>
+  <text x="840.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">1334k</text>
+  <text x="490.0" y="482" font-size="12" fill="#334155" text-anchor="middle">Total Observed Normalized Demand Index</text>
+</svg>

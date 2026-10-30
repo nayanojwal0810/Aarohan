@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #0f172a; }
+    .subtitle { font-size: 12px; fill: #64748b; }
+  </style>
+  <rect width="900" height="500" fill="#ffffff" rx="8"/>
+  <text x="80" y="32" class="title">Distribution of Series-Level Mean Daily Demand</text>
+  <text x="80" y="50" class="subtitle">Histogram across 50,000 store-product series (Values clipped at 5.0 for display; dashed lines denote terciles)</text>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="358.0" x2="860.0" y2="358.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="286.0" x2="860.0" y2="286.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="214.0" x2="860.0" y2="214.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="142.0" x2="860.0" y2="142.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="70.0" x2="860.0" y2="70.0" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="82.0" y="430.0" width="27.2" height="0.0" fill="#3b82f6" rx="2"/>
+  <rect x="113.2" y="418.5" width="27.2" height="11.5" fill="#3b82f6" rx="2"/>
+  <rect x="144.4" y="117.0" width="27.2" height="313.0" fill="#3b82f6" rx="2"/>
+  <rect x="175.6" y="285.8" width="27.2" height="144.2" fill="#10b981" rx="2"/>
+  <rect x="206.8" y="349.7" width="27.2" height="80.3" fill="#f59e0b" rx="2"/>
+  <rect x="238.0" y="378.8" width="27.2" height="51.2" fill="#f59e0b" rx="2"/>
+  <rect x="269.2" y="396.8" width="27.2" height="33.2" fill="#f59e0b" rx="2"/>
+  <rect x="300.4" y="405.3" width="27.2" height="24.7" fill="#f59e0b" rx="2"/>
+  <rect x="331.6" y="412.0" width="27.2" height="18.0" fill="#f59e0b" rx="2"/>
+  <rect x="362.8" y="416.8" width="27.2" height="13.2" fill="#f59e0b" rx="2"/>
+  <rect x="394.0" y="420.3" width="27.2" height="9.7" fill="#f59e0b" rx="2"/>
+  <rect x="425.2" y="422.1" width="27.2" height="7.9" fill="#f59e0b" rx="2"/>
+  <rect x="456.4" y="423.1" width="27.2" height="6.9" fill="#f59e0b" rx="2"/>
+  <rect x="487.6" y="424.7" width="27.2" height="5.3" fill="#f59e0b" rx="2"/>
+  <rect x="518.8" y="425.5" width="27.2" height="4.5" fill="#f59e0b" rx="2"/>
+  <rect x="550.0" y="426.4" width="27.2" height="3.6" fill="#f59e0b" rx="2"/>
+  <rect x="581.2" y="426.5" width="27.2" height="3.5" fill="#f59e0b" rx="2"/>
+  <rect x="612.4" y="427.0" width="27.2" height="3.0" fill="#f59e0b" rx="2"/>
+  <rect x="643.6" y="427.5" width="27.2" height="2.5" fill="#f59e0b" rx="2"/>
+  <rect x="674.8" y="427.9" width="27.2" height="2.1" fill="#f59e0b" rx="2"/>
+  <rect x="706.0" y="428.0" width="27.2" height="2.0" fill="#f59e0b" rx="2"/>
+  <rect x="737.2" y="428.3" width="27.2" height="1.7" fill="#f59e0b" rx="2"/>
+  <rect x="768.4" y="428.5" width="27.2" height="1.5" fill="#f59e0b" rx="2"/>
+  <rect x="799.6" y="428.7" width="27.2" height="1.3" fill="#f59e0b" rx="2"/>
+  <rect x="830.8" y="421.8" width="27.2" height="8.2" fill="#f59e0b" rx="2"/>
+  <line x1="163.7" y1="70" x2="163.7" y2="430.0" stroke="#ef4444" stroke-width="2" stroke-dasharray="4,4"/>
+  <text x="168.7" y="95" font-size="11" fill="#ef4444" font-weight="600">Q1 (0.537)</text>
+  <line x1="215.9" y1="70" x2="215.9" y2="430.0" stroke="#8b5cf6" stroke-width="2" stroke-dasharray="4,4"/>
+  <text x="220.9" y="115" font-size="11" fill="#8b5cf6" font-weight="600">Q2 (0.871)</text>
+  <line x1="80.0" y1="70.0" x2="80.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="68.0" y="434.0" font-size="11" fill="#64748b" text-anchor="end">0</text>
+  <text x="68.0" y="362.0" font-size="11" fill="#64748b" text-anchor="end">4,780</text>
+  <text x="68.0" y="290.0" font-size="11" fill="#64748b" text-anchor="end">9,560</text>
+  <text x="68.0" y="218.0" font-size="11" fill="#64748b" text-anchor="end">14,340</text>
+  <text x="68.0" y="146.0" font-size="11" fill="#64748b" text-anchor="end">19,120</text>
+  <text x="68.0" y="74.0" font-size="11" fill="#64748b" text-anchor="end">23,900</text>
+  <text x="25" y="250.0" font-size="12" fill="#334155" text-anchor="middle" transform="rotate(-90, 25, 250.0)">Number of Series</text>
+  <line x1="80.0" y1="430.0" x2="80.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="80.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">0.0</text>
+  <line x1="158.0" y1="430.0" x2="158.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="158.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">0.5</text>
+  <line x1="236.0" y1="430.0" x2="236.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="236.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">1.0</text>
+  <line x1="314.0" y1="430.0" x2="314.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="314.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">1.5</text>
+  <line x1="392.0" y1="430.0" x2="392.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="392.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">2.0</text>
+  <line x1="470.0" y1="430.0" x2="470.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="470.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">2.5</text>
+  <line x1="548.0" y1="430.0" x2="548.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="548.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">3.0</text>
+  <line x1="626.0" y1="430.0" x2="626.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="626.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">3.5</text>
+  <line x1="704.0" y1="430.0" x2="704.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="704.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">4.0</text>
+  <line x1="782.0" y1="430.0" x2="782.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="782.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">4.5</text>
+  <line x1="860.0" y1="430.0" x2="860.0" y2="435.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="860.0" y="450.0" font-size="11" fill="#64748b" text-anchor="middle">5.0</text>
+  <text x="470.0" y="482" font-size="12" fill="#334155" text-anchor="middle">Mean Daily Normalized Demand Index</text>
+  <g transform="translate(650, 20)">
+    <rect x="0" y="0" width="12" height="12" fill="#3b82f6" rx="2"/>
+    <text x="18" y="10" font-size="11" fill="#334155">Low Demand (≤0.54)</text>
+    <rect x="0" y="18" width="12" height="12" fill="#10b981" rx="2"/>
+    <text x="18" y="28" font-size="11" fill="#334155">Medium (0.54–0.87)</text>
+    <rect x="0" y="36" width="12" height="12" fill="#f59e0b" rx="2"/>
+    <text x="18" y="46" font-size="11" fill="#334155">High Demand (&gt;0.87)</text>
+  </g>
+</svg>

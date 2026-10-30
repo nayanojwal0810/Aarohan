@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #0f172a; }
+    .subtitle { font-size: 12px; fill: #64748b; }
+  </style>
+  <rect width="900" height="500" fill="#ffffff" rx="8"/>
+  <text x="80" y="32" class="title">Daily Aggregate Normalized Demand Trend (FreshRetailNet-50K)</text>
+  <text x="80" y="50" class="subtitle">Daily aggregated sum of normalized demand index (Shaded areas indicate Saturdays and Sundays)</text>
+  <rect x="93.2" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="102.0" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="154.5" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="163.3" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="215.9" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="224.7" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="277.2" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="286.0" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="338.6" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="347.4" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="399.9" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="408.7" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="461.3" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="470.0" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="522.6" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="531.4" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="584.0" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="592.7" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="645.3" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="654.1" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="706.7" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="715.4" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="768.0" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="776.8" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="829.4" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <rect x="838.1" y="70.0" width="8.7" height="350.0" fill="#f1f5f9" opacity="0.6"/>
+  <line x1="80.0" y1="420.0" x2="860.0" y2="420.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="350.0" x2="860.0" y2="350.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="280.0" x2="860.0" y2="280.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="210.0" x2="860.0" y2="210.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="140.0" x2="860.0" y2="140.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="70.0" x2="860.0" y2="70.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="70.0" x2="80.0" y2="420.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="80.0" y1="420.0" x2="860.0" y2="420.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="68.0" y="424.0" font-size="11" fill="#64748b" text-anchor="end">0.0k</text>
+  <text x="68.0" y="354.0" font-size="11" fill="#64748b" text-anchor="end">16.8k</text>
+  <text x="68.0" y="284.0" font-size="11" fill="#64748b" text-anchor="end">33.6k</text>
+  <text x="68.0" y="214.0" font-size="11" fill="#64748b" text-anchor="end">50.3k</text>
+  <text x="68.0" y="144.0" font-size="11" fill="#64748b" text-anchor="end">67.1k</text>
+  <text x="68.0" y="74.0" font-size="11" fill="#64748b" text-anchor="end">83.9k</text>
+  <text x="30" y="245.0" font-size="12" fill="#334155" text-anchor="middle" transform="rotate(-90, 30, 245.0)">Total Daily Demand Index</text>
+  <line x1="80.0" y1="420.0" x2="80.0" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="80.0" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 80.0, 442.0)">2024-03-28</text>
+  <line x1="176.4" y1="420.0" x2="176.4" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="176.4" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 176.4, 442.0)">2024-04-08</text>
+  <line x1="272.8" y1="420.0" x2="272.8" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="272.8" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 272.8, 442.0)">2024-04-19</text>
+  <line x1="369.2" y1="420.0" x2="369.2" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="369.2" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 369.2, 442.0)">2024-04-30</text>
+  <line x1="465.6" y1="420.0" x2="465.6" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="465.6" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 465.6, 442.0)">2024-05-11</text>
+  <line x1="562.0" y1="420.0" x2="562.0" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="562.0" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 562.0, 442.0)">2024-05-22</text>
+  <line x1="658.4" y1="420.0" x2="658.4" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="658.4" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 658.4, 442.0)">2024-06-02</text>
+  <line x1="754.8" y1="420.0" x2="754.8" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="754.8" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 754.8, 442.0)">2024-06-13</text>
+  <line x1="851.2" y1="420.0" x2="851.2" y2="425.0" stroke="#94a3b8" stroke-width="1"/>
+  <text x="851.2" y="442.0" font-size="10" fill="#64748b" text-anchor="middle" transform="rotate(30, 851.2, 442.0)">2024-06-24</text>
+  <text x="470.0" y="485" font-size="12" fill="#334155" text-anchor="middle">Observation Date (YYYY-MM-DD)</text>
+  <polyline fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="80.0,270.7 88.8,274.4 97.5,219.7 106.3,211.6 115.1,271.4 123.8,261.2 132.6,271.5 141.3,224.2 150.1,242.4 158.9,211.5 167.6,244.0 176.4,252.9 185.2,251.4 193.9,261.2 202.7,262.7 211.5,230.4 220.2,189.5 229.0,186.1 237.8,249.7 246.5,246.1 255.3,222.3 264.0,257.2 272.8,227.0 281.6,175.9 290.3,167.0 299.1,232.7 307.9,218.6 316.6,258.5 325.4,246.8 334.2,240.3 342.9,168.7 351.7,219.7 360.4,252.0 369.2,219.1 378.0,194.9 386.7,245.5 395.5,237.0 404.3,191.3 413.0,153.1 421.8,217.2 430.6,218.0 439.3,233.3 448.1,236.7 456.9,221.1 465.6,186.3 474.4,115.7 483.1,222.1 491.9,212.1 500.7,231.7 509.4,237.4 518.2,221.6 527.0,146.8 535.7,144.8 544.5,213.5 553.3,205.4 562.0,227.7 570.8,234.6 579.6,222.4 588.3,153.6 597.1,145.2 605.8,201.4 614.6,215.0 623.4,230.1 632.1,224.2 640.9,207.7 649.7,167.6 658.4,154.3 667.2,221.0 676.0,220.6 684.7,223.0 693.5,240.4 702.2,226.7 711.0,176.9 719.8,186.9 728.5,151.8 737.3,206.7 746.1,226.5 754.8,233.5 763.6,218.8 772.4,152.7 781.1,150.4 789.9,212.6 798.7,200.7 807.4,189.0 816.2,197.4 824.9,176.5 833.7,124.1 842.5,124.7 851.2,205.1 860.0,176.0"/>
+</svg>

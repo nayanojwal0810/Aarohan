@@ -1,0 +1,18 @@
+metric,train_partition,eval_partition_held_out,absolute_diff,relative_change,assessment_role
+Observations,4500000,350000,-4150000,-92.22%,Descriptive Held-Out Assessment
+Dates (Days),90,7,-83,-92.22%,Descriptive Held-Out Assessment
+Date Start,2024-03-28,2024-06-26,N/A,N/A,Descriptive Held-Out Assessment
+Date End,2024-06-25,2024-07-02,N/A,N/A,Descriptive Held-Out Assessment
+Unique Stores,898,898,0,0.0%,Descriptive Held-Out Assessment
+Unique Products,865,865,0,0.0%,Descriptive Held-Out Assessment
+Store-Product Series,50000,50000,0,0.0%,Descriptive Held-Out Assessment
+Mean Daily Demand,0.9986,1.1931,0.1945,19.48%,Descriptive Held-Out Assessment
+Median Daily Demand,0.7,0.8,0.1,14.29%,Descriptive Held-Out Assessment
+Std Dev Daily Demand,1.4067,1.9116,0.5049,35.89%,Descriptive Held-Out Assessment
+Zero-Sales Share (%),4.46,4.16,-0.3,-6.73%,Descriptive Held-Out Assessment
+Daytime Stockout-Free Share (%),55.73,59.02,3.29,5.9%,Descriptive Held-Out Assessment
+Partially Stockout-Affected Share (%),40.23,37.4,-2.83,-7.03%,Descriptive Held-Out Assessment
+Fully Daytime Stockout Share (%),4.04,3.58,-0.46,-11.39%,Descriptive Held-Out Assessment
+Fully 24-Hour Stockout Share (%),3.79,3.37,-0.42,-11.08%,Descriptive Held-Out Assessment
+Mean Daytime Stockout (%),19.8771,18.1077,-1.7694,-8.9%,Descriptive Held-Out Assessment
+Mean 24-Hour Stockout (%),24.8856,22.7746,-2.111,-8.48%,Descriptive Held-Out Assessment

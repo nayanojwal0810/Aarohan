@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #0f172a; }
+    .subtitle { font-size: 12px; fill: #64748b; }
+  </style>
+  <rect width="900" height="500" fill="#ffffff" rx="8"/>
+  <text x="80" y="32" class="title">Distribution of Daytime Stockout Hours (06:00 to 21:00)</text>
+  <text x="80" y="50" class="subtitle">Observation count by daytime stockout hours in training partition (55.7% at 0h, 40.2% partial 1–15h, 4.0% at 16h)</text>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="358.0" x2="860.0" y2="358.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="286.0" x2="860.0" y2="286.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="214.0" x2="860.0" y2="214.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="142.0" x2="860.0" y2="142.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="70.0" x2="860.0" y2="70.0" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="83.0" y="117.0" width="39.9" height="313.0" fill="#10b981" rx="2"/>
+  <text x="102.9" y="111.0" font-size="9" fill="#334155" text-anchor="middle">55.7%</text>
+  <rect x="128.9" y="411.0" width="39.9" height="19.0" fill="#6366f1" rx="2"/>
+  <text x="148.8" y="405.0" font-size="9" fill="#334155" text-anchor="middle">3.4%</text>
+  <rect x="174.8" y="415.0" width="39.9" height="15.0" fill="#6366f1" rx="2"/>
+  <text x="194.7" y="409.0" font-size="9" fill="#334155" text-anchor="middle">2.7%</text>
+  <rect x="220.6" y="412.2" width="39.9" height="17.8" fill="#6366f1" rx="2"/>
+  <text x="240.6" y="406.2" font-size="9" fill="#334155" text-anchor="middle">3.2%</text>
+  <rect x="266.5" y="405.1" width="39.9" height="24.9" fill="#6366f1" rx="2"/>
+  <text x="286.5" y="399.1" font-size="9" fill="#334155" text-anchor="middle">4.4%</text>
+  <rect x="312.4" y="399.8" width="39.9" height="30.2" fill="#6366f1" rx="2"/>
+  <text x="332.4" y="393.8" font-size="9" fill="#334155" text-anchor="middle">5.4%</text>
+  <rect x="358.3" y="404.6" width="39.9" height="25.4" fill="#6366f1" rx="2"/>
+  <text x="378.2" y="398.6" font-size="9" fill="#334155" text-anchor="middle">4.5%</text>
+  <rect x="404.2" y="412.2" width="39.9" height="17.8" fill="#6366f1" rx="2"/>
+  <text x="424.1" y="406.2" font-size="9" fill="#334155" text-anchor="middle">3.2%</text>
+  <rect x="450.1" y="416.0" width="39.9" height="14.0" fill="#6366f1" rx="2"/>
+  <text x="470.0" y="410.0" font-size="9" fill="#334155" text-anchor="middle">2.5%</text>
+  <rect x="495.9" y="417.2" width="39.9" height="12.8" fill="#6366f1" rx="2"/>
+  <text x="515.9" y="411.2" font-size="9" fill="#334155" text-anchor="middle">2.3%</text>
+  <rect x="541.8" y="416.7" width="39.9" height="13.3" fill="#6366f1" rx="2"/>
+  <text x="561.8" y="410.7" font-size="9" fill="#334155" text-anchor="middle">2.4%</text>
+  <rect x="587.7" y="416.4" width="39.9" height="13.6" fill="#6366f1" rx="2"/>
+  <text x="607.6" y="410.4" font-size="9" fill="#334155" text-anchor="middle">2.4%</text>
+  <rect x="633.6" y="419.5" width="39.9" height="10.5" fill="#6366f1" rx="2"/>
+  <text x="653.5" y="413.5" font-size="9" fill="#334155" text-anchor="middle">1.9%</text>
+  <rect x="679.5" y="423.3" width="39.9" height="6.7" fill="#6366f1" rx="2"/>
+  <text x="699.4" y="417.3" font-size="9" fill="#334155" text-anchor="middle">1.2%</text>
+  <rect x="725.4" y="426.7" width="39.9" height="3.3" fill="#6366f1" rx="2"/>
+  <text x="745.3" y="420.7" font-size="9" fill="#334155" text-anchor="middle">0.6%</text>
+  <rect x="771.2" y="428.5" width="39.9" height="1.5" fill="#6366f1" rx="2"/>
+  <text x="791.2" y="422.5" font-size="9" fill="#334155" text-anchor="middle">0.3%</text>
+  <rect x="817.1" y="407.3" width="39.9" height="22.7" fill="#ef4444" rx="2"/>
+  <text x="837.1" y="401.3" font-size="9" fill="#334155" text-anchor="middle">4.0%</text>
+  <line x1="80.0" y1="70.0" x2="80.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="68.0" y="434.0" font-size="11" fill="#64748b" text-anchor="end">0.00M</text>
+  <text x="68.0" y="362.0" font-size="11" fill="#64748b" text-anchor="end">0.58M</text>
+  <text x="68.0" y="290.0" font-size="11" fill="#64748b" text-anchor="end">1.15M</text>
+  <text x="68.0" y="218.0" font-size="11" fill="#64748b" text-anchor="end">1.73M</text>
+  <text x="68.0" y="146.0" font-size="11" fill="#64748b" text-anchor="end">2.31M</text>
+  <text x="68.0" y="74.0" font-size="11" fill="#64748b" text-anchor="end">2.88M</text>
+  <text x="25" y="250.0" font-size="12" fill="#334155" text-anchor="middle" transform="rotate(-90, 25, 250.0)">Observation Count (Millions)</text>
+  <text x="102.9" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">0h</text>
+  <text x="148.8" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">1h</text>
+  <text x="194.7" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">2h</text>
+  <text x="240.6" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">3h</text>
+  <text x="286.5" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">4h</text>
+  <text x="332.4" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">5h</text>
+  <text x="378.2" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">6h</text>
+  <text x="424.1" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">7h</text>
+  <text x="470.0" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">8h</text>
+  <text x="515.9" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">9h</text>
+  <text x="561.8" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">10h</text>
+  <text x="607.6" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">11h</text>
+  <text x="653.5" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">12h</text>
+  <text x="699.4" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">13h</text>
+  <text x="745.3" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">14h</text>
+  <text x="791.2" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">15h</text>
+  <text x="837.1" y="448.0" font-size="10" fill="#64748b" text-anchor="middle">16h</text>
+  <text x="470.0" y="482" font-size="12" fill="#334155" text-anchor="middle">Daytime Stockout Duration (Hours in 06:00–21:00 Window)</text>
+  <g transform="translate(650, 20)">
+    <rect x="0" y="0" width="12" height="12" fill="#10b981" rx="2"/>
+    <text x="18" y="10" font-size="11" fill="#334155">Stockout-Free (0h, 55.7%)</text>
+    <rect x="0" y="18" width="12" height="12" fill="#6366f1" rx="2"/>
+    <text x="18" y="28" font-size="11" fill="#334155">Partially Affected (1–15h)</text>
+    <rect x="0" y="36" width="12" height="12" fill="#ef4444" rx="2"/>
+    <text x="18" y="46" font-size="11" fill="#334155">Fully Stockout (16h, 4.0%)</text>
+  </g>
+</svg>

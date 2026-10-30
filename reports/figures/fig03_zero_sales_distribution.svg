@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #0f172a; }
+    .subtitle { font-size: 12px; fill: #64748b; }
+  </style>
+  <rect width="900" height="500" fill="#ffffff" rx="8"/>
+  <text x="80" y="32" class="title">Distribution of Zero-Sales Frequency across Series</text>
+  <text x="80" y="50" class="subtitle">Percentage of zero-sales observation days across 50,000 series (Demonstrates fast-moving retail continuity)</text>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="358.0" x2="860.0" y2="358.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="286.0" x2="860.0" y2="286.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="214.0" x2="860.0" y2="214.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="142.0" x2="860.0" y2="142.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="70.0" x2="860.0" y2="70.0" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="90.0" y="231.6" width="91.4" height="198.4" fill="#3b82f6" rx="3"/>
+  <text x="135.7" y="225.6" font-size="11" fill="#334155" font-weight="500" text-anchor="middle">14,405</text>
+  <rect x="201.4" y="117.0" width="91.4" height="313.0" fill="#3b82f6" rx="3"/>
+  <text x="247.1" y="111.0" font-size="11" fill="#334155" font-weight="500" text-anchor="middle">22,728</text>
+  <rect x="312.9" y="334.0" width="91.4" height="96.0" fill="#3b82f6" rx="3"/>
+  <text x="358.6" y="328.0" font-size="11" fill="#334155" font-weight="500" text-anchor="middle">6,971</text>
+  <rect x="424.3" y="379.7" width="91.4" height="50.3" fill="#3b82f6" rx="3"/>
+  <text x="470.0" y="373.7" font-size="11" fill="#334155" font-weight="500" text-anchor="middle">3,649</text>
+  <rect x="535.7" y="409.8" width="91.4" height="20.2" fill="#e11d48" rx="3"/>
+  <text x="581.4" y="403.8" font-size="11" fill="#334155" font-weight="500" text-anchor="middle">1,467</text>
+  <rect x="647.1" y="420.3" width="91.4" height="9.7" fill="#e11d48" rx="3"/>
+  <text x="692.9" y="414.3" font-size="11" fill="#334155" font-weight="500" text-anchor="middle">706</text>
+  <rect x="758.6" y="429.0" width="91.4" height="1.0" fill="#e11d48" rx="3"/>
+  <text x="804.3" y="423.0" font-size="11" fill="#334155" font-weight="500" text-anchor="middle">74</text>
+  <line x1="80.0" y1="70.0" x2="80.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="68.0" y="434.0" font-size="11" fill="#64748b" text-anchor="end">0</text>
+  <text x="68.0" y="362.0" font-size="11" fill="#64748b" text-anchor="end">5,227</text>
+  <text x="68.0" y="290.0" font-size="11" fill="#64748b" text-anchor="end">10,454</text>
+  <text x="68.0" y="218.0" font-size="11" fill="#64748b" text-anchor="end">15,682</text>
+  <text x="68.0" y="146.0" font-size="11" fill="#64748b" text-anchor="end">20,909</text>
+  <text x="68.0" y="74.0" font-size="11" fill="#64748b" text-anchor="end">26,137</text>
+  <text x="25" y="250.0" font-size="12" fill="#334155" text-anchor="middle" transform="rotate(-90, 25, 250.0)">Number of Store-Product Series</text>
+  <text x="135.7" y="452.0" font-size="11" fill="#64748b" text-anchor="middle">0%</text>
+  <text x="247.1" y="452.0" font-size="11" fill="#64748b" text-anchor="middle">(0%, 5%]</text>
+  <text x="358.6" y="452.0" font-size="11" fill="#64748b" text-anchor="middle">(5%, 10%]</text>
+  <text x="470.0" y="452.0" font-size="11" fill="#64748b" text-anchor="middle">(10%, 20%]</text>
+  <text x="581.4" y="452.0" font-size="11" fill="#64748b" text-anchor="middle">(20%, 30%]</text>
+  <text x="692.9" y="452.0" font-size="11" fill="#64748b" text-anchor="middle">(30%, 50%]</text>
+  <text x="804.3" y="452.0" font-size="11" fill="#64748b" text-anchor="middle">&gt; 50%</text>
+  <text x="470.0" y="482" font-size="12" fill="#334155" text-anchor="middle">Historical Zero-Sales Days Share (%)</text>
+</svg>

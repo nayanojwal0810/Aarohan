@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #0f172a; }
+    .subtitle { font-size: 12px; fill: #64748b; }
+  </style>
+  <rect width="900" height="500" fill="#ffffff" rx="8"/>
+  <text x="80" y="32" class="title">Observed Demand by Day of Week</text>
+  <text x="80" y="50" class="subtitle">Mean demand (Bars) and Median demand (White Circles) across 4.5M training observations</text>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="358.0" x2="860.0" y2="358.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="286.0" x2="860.0" y2="286.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="214.0" x2="860.0" y2="214.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="142.0" x2="860.0" y2="142.0" stroke="#e2e8f0" stroke-width="1"/>
+  <line x1="80.0" y1="70.0" x2="860.0" y2="70.0" stroke="#e2e8f0" stroke-width="1"/>
+  <rect x="94.0" y="203.9" width="83.4" height="226.1" fill="#3b82f6" rx="3"/>
+  <text x="135.7" y="195.9" font-size="11" fill="#0f172a" font-weight="600" text-anchor="middle">
+    0.943
+  </text>
+  <circle cx="135.7" cy="286.1" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="205.4" y="199.3" width="83.4" height="230.7" fill="#3b82f6" rx="3"/>
+  <text x="247.1" y="191.3" font-size="11" fill="#0f172a" font-weight="600" text-anchor="middle">
+    0.962
+  </text>
+  <circle cx="247.1" cy="271.7" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="316.9" y="212.5" width="83.4" height="217.5" fill="#3b82f6" rx="3"/>
+  <text x="358.6" y="204.5" font-size="11" fill="#0f172a" font-weight="600" text-anchor="middle">
+    0.907
+  </text>
+  <circle cx="358.6" cy="286.1" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="428.3" y="222.3" width="83.4" height="207.7" fill="#3b82f6" rx="3"/>
+  <text x="470.0" y="214.3" font-size="11" fill="#0f172a" font-weight="600" text-anchor="middle">
+    0.866
+  </text>
+  <circle cx="470.0" cy="286.1" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="539.7" y="207.7" width="83.4" height="222.3" fill="#3b82f6" rx="3"/>
+  <text x="581.4" y="199.7" font-size="11" fill="#0f172a" font-weight="600" text-anchor="middle">
+    0.927
+  </text>
+  <circle cx="581.4" cy="286.1" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="651.1" y="147.4" width="83.4" height="282.6" fill="#f59e0b" rx="3"/>
+  <text x="692.9" y="139.4" font-size="11" fill="#0f172a" font-weight="600" text-anchor="middle">
+    1.178
+  </text>
+  <circle cx="692.9" cy="238.1" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <rect x="762.6" y="142.0" width="83.4" height="288.0" fill="#f59e0b" rx="3"/>
+  <text x="804.3" y="134.0" font-size="11" fill="#0f172a" font-weight="600" text-anchor="middle">
+    1.201
+  </text>
+  <circle cx="804.3" cy="238.1" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+  <line x1="80.0" y1="70.0" x2="80.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="80.0" y1="430.0" x2="860.0" y2="430.0" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="68.0" y="434.0" font-size="11" fill="#64748b" text-anchor="end">0.00</text>
+  <text x="68.0" y="362.0" font-size="11" fill="#64748b" text-anchor="end">0.30</text>
+  <text x="68.0" y="290.0" font-size="11" fill="#64748b" text-anchor="end">0.60</text>
+  <text x="68.0" y="218.0" font-size="11" fill="#64748b" text-anchor="end">0.90</text>
+  <text x="68.0" y="146.0" font-size="11" fill="#64748b" text-anchor="end">1.20</text>
+  <text x="68.0" y="74.0" font-size="11" fill="#64748b" text-anchor="end">1.50</text>
+  <text x="30" y="250.0" font-size="12" fill="#334155" text-anchor="middle" transform="rotate(-90, 30, 250.0)">Mean Daily Normalized Demand</text>
+  <text x="135.7" y="452.0" font-size="12" fill="#334155" font-weight="400" text-anchor="middle">Monday</text>
+  <text x="247.1" y="452.0" font-size="12" fill="#334155" font-weight="400" text-anchor="middle">Tuesday</text>
+  <text x="358.6" y="452.0" font-size="12" fill="#334155" font-weight="400" text-anchor="middle">Wednesday</text>
+  <text x="470.0" y="452.0" font-size="12" fill="#334155" font-weight="400" text-anchor="middle">Thursday</text>
+  <text x="581.4" y="452.0" font-size="12" fill="#334155" font-weight="400" text-anchor="middle">Friday</text>
+  <text x="692.9" y="452.0" font-size="12" fill="#334155" font-weight="600" text-anchor="middle">Saturday</text>
+  <text x="804.3" y="452.0" font-size="12" fill="#334155" font-weight="600" text-anchor="middle">Sunday</text>
+  <text x="470.0" y="482" font-size="12" fill="#334155" text-anchor="middle">Calendar Day of Week</text>
+  <g transform="translate(660, 20)">
+    <rect x="0" y="0" width="12" height="12" fill="#3b82f6" rx="2"/>
+    <text x="18" y="10" font-size="11" fill="#334155">Weekday</text>
+    <rect x="0" y="18" width="12" height="12" fill="#f59e0b" rx="2"/>
+    <text x="18" y="28" font-size="11" fill="#334155">Weekend (Sat/Sun)</text>
+    <circle cx="6" cy="42" r="4" fill="#ffffff" stroke="#0f172a" stroke-width="2"/>
+    <text x="18" y="46" font-size="11" fill="#334155">Median Demand Point</text>
+  </g>
+</svg>
