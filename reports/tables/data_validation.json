@@ -1,0 +1,716 @@
+{
+  "timestamp": "2026-10-30T12:51:50.796465+00:00",
+  "overall_status": "WARNING",
+  "train": {
+    "dataset_name": "train",
+    "status": "WARNING",
+    "summary_counts": {
+      "total": 27,
+      "pass": 26,
+      "warning": 1,
+      "fail": 0
+    },
+    "metadata": {
+      "name": "train",
+      "path": "D:\\Aarohan\\data\\raw\\train.parquet",
+      "file_size_bytes": 106436287,
+      "file_size_mb": 101.51,
+      "sha256": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d",
+      "num_rows": 4500000,
+      "num_columns": 19,
+      "num_row_groups": 4500,
+      "column_names": [
+        "city_id",
+        "store_id",
+        "management_group_id",
+        "first_category_id",
+        "second_category_id",
+        "third_category_id",
+        "product_id",
+        "dt",
+        "sale_amount",
+        "hours_sale",
+        "stock_hour6_22_cnt",
+        "hours_stock_status",
+        "discount",
+        "holiday_flag",
+        "activity_flag",
+        "precpt",
+        "avg_temperature",
+        "avg_humidity",
+        "avg_wind_level"
+      ],
+      "schema": {
+        "city_id": "int64",
+        "store_id": "int64",
+        "management_group_id": "int64",
+        "first_category_id": "int64",
+        "second_category_id": "int64",
+        "third_category_id": "int64",
+        "product_id": "int64",
+        "dt": "string",
+        "sale_amount": "double",
+        "hours_sale": "list<element: double>",
+        "stock_hour6_22_cnt": "int32",
+        "hours_stock_status": "list<element: int64>",
+        "discount": "double",
+        "holiday_flag": "int32",
+        "activity_flag": "int32",
+        "precpt": "double",
+        "avg_temperature": "double",
+        "avg_humidity": "double",
+        "avg_wind_level": "double"
+      },
+      "min_dt": "2024-03-28",
+      "max_dt": "2024-06-25",
+      "num_days": 90,
+      "num_stores": 898,
+      "num_products": 865,
+      "num_series": 50000
+    },
+    "checks": [
+      {
+        "name": "file_existence",
+        "status": "PASS",
+        "expected": "Existing regular file",
+        "actual": "train.parquet",
+        "explanation": "File verified at D:\\Aarohan\\data\\raw\\train.parquet",
+        "counts": {}
+      },
+      {
+        "name": "sha256_checksum",
+        "status": "PASS",
+        "expected": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d",
+        "actual": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d",
+        "explanation": "Cryptographic SHA-256 digest matches authoritative benchmark",
+        "counts": {}
+      },
+      {
+        "name": "row_count",
+        "status": "PASS",
+        "expected": 4500000,
+        "actual": 4500000,
+        "explanation": "Parquet row count: 4,500,000",
+        "counts": {
+          "row_count": 4500000
+        }
+      },
+      {
+        "name": "column_count",
+        "status": "PASS",
+        "expected": 19,
+        "actual": 19,
+        "explanation": "Parquet column count: 19",
+        "counts": {
+          "column_count": 19
+        }
+      },
+      {
+        "name": "schema_missing_columns",
+        "status": "PASS",
+        "expected": "All required columns present",
+        "actual": "No missing columns",
+        "explanation": "All required schema columns are present",
+        "counts": {}
+      },
+      {
+        "name": "schema_unexpected_columns",
+        "status": "PASS",
+        "expected": "No extraneous columns",
+        "actual": "Zero extraneous columns",
+        "explanation": "No unexpected columns detected",
+        "counts": {}
+      },
+      {
+        "name": "schema_data_types",
+        "status": "PASS",
+        "expected": "All column types matching specification",
+        "actual": "All types match",
+        "explanation": "All column types match the logical Arrow schema specification",
+        "counts": {}
+      },
+      {
+        "name": "missing_values_scalar",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Total null values across scalar fields: 0",
+        "counts": {
+          "null_count": 0
+        }
+      },
+      {
+        "name": "non_finite_values",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Non-finite (NaN/Inf) values across numeric fields: 0",
+        "counts": {
+          "non_finite_count": 0
+        }
+      },
+      {
+        "name": "negative_sales",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Negative sale_amount occurrences: 0",
+        "counts": {
+          "negative_sales_count": 0
+        }
+      },
+      {
+        "name": "natural_key_duplicates",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Duplicate natural key (store_id, product_id, dt) groups: 0",
+        "counts": {
+          "duplicate_groups": 0
+        }
+      },
+      {
+        "name": "binary_flags_validity",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Invalid holiday_flag or activity_flag non-binary values: 0",
+        "counts": {
+          "invalid_flags_count": 0
+        }
+      },
+      {
+        "name": "date_format_check",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Dates failing ISO YYYY-MM-DD parsing: 0",
+        "counts": {
+          "invalid_dates_count": 0
+        }
+      },
+      {
+        "name": "unique_stores",
+        "status": "PASS",
+        "expected": 898,
+        "actual": 898,
+        "explanation": "Unique store count: 898",
+        "counts": {}
+      },
+      {
+        "name": "unique_products",
+        "status": "PASS",
+        "expected": 865,
+        "actual": 865,
+        "explanation": "Unique product count: 865",
+        "counts": {}
+      },
+      {
+        "name": "unique_series",
+        "status": "PASS",
+        "expected": 50000,
+        "actual": 50000,
+        "explanation": "Unique store-product series: 50,000",
+        "counts": {}
+      },
+      {
+        "name": "date_boundaries",
+        "status": "PASS",
+        "expected": "2024-03-28 to 2024-06-25",
+        "actual": "2024-03-28 to 2024-06-25",
+        "explanation": "Date range span: 2024-03-28 to 2024-06-25",
+        "counts": {}
+      },
+      {
+        "name": "date_continuity",
+        "status": "PASS",
+        "expected": 90,
+        "actual": 90,
+        "explanation": "Calendar date count: 90 days (calendar span: 90)",
+        "counts": {}
+      },
+      {
+        "name": "series_observation_balance",
+        "status": "PASS",
+        "expected": "Exactly 90 observations per series",
+        "actual": "Min: 90, Max: 90",
+        "explanation": "Each of the 50,000 series contains 90 to 90 observations",
+        "counts": {
+          "min_days_per_series": 90,
+          "max_days_per_series": 90
+        }
+      },
+      {
+        "name": "daily_record_balance",
+        "status": "PASS",
+        "expected": "Exactly 50,000 records per date",
+        "actual": "Min: 50,000, Max: 50,000",
+        "explanation": "Daily record counts across all 90 dates: 50,000 to 50,000",
+        "counts": {}
+      },
+      {
+        "name": "hourly_array_lengths",
+        "status": "PASS",
+        "expected": "Exactly 24 values per array",
+        "actual": "All 24 elements",
+        "explanation": "Array length validation across hours_sale and hours_stock_status",
+        "counts": {
+          "invalid_length_rows": 0
+        }
+      },
+      {
+        "name": "hourly_sales_validity",
+        "status": "PASS",
+        "expected": "Non-negative, finite, non-null values",
+        "actual": "0 negative/non-finite rows",
+        "explanation": "Hourly sales element values are valid and non-negative",
+        "counts": {}
+      },
+      {
+        "name": "hourly_stock_status_binary",
+        "status": "PASS",
+        "expected": "Strictly binary values in {0, 1}",
+        "actual": "0 non-binary rows",
+        "explanation": "Hourly stockout status elements are strictly binary flags (0=in-stock, 1=stockout)",
+        "counts": {}
+      },
+      {
+        "name": "daily_hourly_sales_reconciliation",
+        "status": "PASS",
+        "expected": "sale_amount == sum(hours_sale) within tolerance 1e-05",
+        "actual": "0 mismatches (max diff: 7.11e-15, mean diff: 4.73e-17)",
+        "explanation": "Daily recorded sales reconcile with the sum of hourly sales within float precision",
+        "counts": {
+          "mismatch_count": 0,
+          "max_diff": 7.105427357601002e-15,
+          "mean_diff": 4.726787479943558e-17,
+          "within_tolerance_rows": 4500000
+        }
+      },
+      {
+        "name": "stockout_count_reconciliation",
+        "status": "PASS",
+        "expected": "stock_hour6_22_cnt == sum(hours_stock_status[6:22])",
+        "actual": "0 mismatches (max diff: 0.0)",
+        "explanation": "Daytime stockout count aligns with the sum of hours 6 through 21",
+        "counts": {
+          "mismatch_count": 0,
+          "max_diff": 0.0
+        }
+      },
+      {
+        "name": "discount_non_negative",
+        "status": "PASS",
+        "expected": "discount >= 0.0",
+        "actual": "Zero negative discount values",
+        "explanation": "Discount rates are non-negative across all records",
+        "counts": {}
+      },
+      {
+        "name": "discount_ceiling_anomaly",
+        "status": "WARNING",
+        "expected": "discount <= 1.0 (standard promotional discount convention)",
+        "actual": "34 records with discount > 1.0 (max: 1.088)",
+        "explanation": "Found 34 records exceeding 1.0 with max 1.088. These represent isolated pricing surcharge / markup anomalies for product SKU 37 preserved without clipping per specification.",
+        "counts": {
+          "discount_gt_1_count": 34,
+          "max_discount": 1.088
+        }
+      }
+    ],
+    "diagnostics": {
+      "stockout_diagnostics": {
+        "total_rows": 4500000,
+        "daytime_no_stockout_rows": 2507994,
+        "daytime_no_stockout_pct": 55.73,
+        "daytime_full_stockout_rows": 181791,
+        "full_day_stockout_rows": 170717,
+        "total_stockout_hours": 26876404,
+        "positive_sale_stockout_hours": 772426,
+        "pct_positive_sale_stockout_hours": 2.874,
+        "sales_volume_during_stockout": 112931.355
+      }
+    }
+  },
+  "eval": {
+    "dataset_name": "eval",
+    "status": "PASS",
+    "summary_counts": {
+      "total": 27,
+      "pass": 27,
+      "warning": 0,
+      "fail": 0
+    },
+    "metadata": {
+      "name": "eval",
+      "path": "D:\\Aarohan\\data\\raw\\eval.parquet",
+      "file_size_bytes": 8440124,
+      "file_size_mb": 8.05,
+      "sha256": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e",
+      "num_rows": 350000,
+      "num_columns": 19,
+      "num_row_groups": 350,
+      "column_names": [
+        "city_id",
+        "store_id",
+        "management_group_id",
+        "first_category_id",
+        "second_category_id",
+        "third_category_id",
+        "product_id",
+        "dt",
+        "sale_amount",
+        "hours_sale",
+        "stock_hour6_22_cnt",
+        "hours_stock_status",
+        "discount",
+        "holiday_flag",
+        "activity_flag",
+        "precpt",
+        "avg_temperature",
+        "avg_humidity",
+        "avg_wind_level"
+      ],
+      "schema": {
+        "city_id": "int64",
+        "store_id": "int64",
+        "management_group_id": "int64",
+        "first_category_id": "int64",
+        "second_category_id": "int64",
+        "third_category_id": "int64",
+        "product_id": "int64",
+        "dt": "string",
+        "sale_amount": "double",
+        "hours_sale": "list<element: double>",
+        "stock_hour6_22_cnt": "int32",
+        "hours_stock_status": "list<element: int64>",
+        "discount": "double",
+        "holiday_flag": "int32",
+        "activity_flag": "int32",
+        "precpt": "double",
+        "avg_temperature": "double",
+        "avg_humidity": "double",
+        "avg_wind_level": "double"
+      },
+      "min_dt": "2024-06-26",
+      "max_dt": "2024-07-02",
+      "num_days": 7,
+      "num_stores": 898,
+      "num_products": 865,
+      "num_series": 50000
+    },
+    "checks": [
+      {
+        "name": "file_existence",
+        "status": "PASS",
+        "expected": "Existing regular file",
+        "actual": "eval.parquet",
+        "explanation": "File verified at D:\\Aarohan\\data\\raw\\eval.parquet",
+        "counts": {}
+      },
+      {
+        "name": "sha256_checksum",
+        "status": "PASS",
+        "expected": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e",
+        "actual": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e",
+        "explanation": "Cryptographic SHA-256 digest matches authoritative benchmark",
+        "counts": {}
+      },
+      {
+        "name": "row_count",
+        "status": "PASS",
+        "expected": 350000,
+        "actual": 350000,
+        "explanation": "Parquet row count: 350,000",
+        "counts": {
+          "row_count": 350000
+        }
+      },
+      {
+        "name": "column_count",
+        "status": "PASS",
+        "expected": 19,
+        "actual": 19,
+        "explanation": "Parquet column count: 19",
+        "counts": {
+          "column_count": 19
+        }
+      },
+      {
+        "name": "schema_missing_columns",
+        "status": "PASS",
+        "expected": "All required columns present",
+        "actual": "No missing columns",
+        "explanation": "All required schema columns are present",
+        "counts": {}
+      },
+      {
+        "name": "schema_unexpected_columns",
+        "status": "PASS",
+        "expected": "No extraneous columns",
+        "actual": "Zero extraneous columns",
+        "explanation": "No unexpected columns detected",
+        "counts": {}
+      },
+      {
+        "name": "schema_data_types",
+        "status": "PASS",
+        "expected": "All column types matching specification",
+        "actual": "All types match",
+        "explanation": "All column types match the logical Arrow schema specification",
+        "counts": {}
+      },
+      {
+        "name": "missing_values_scalar",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Total null values across scalar fields: 0",
+        "counts": {
+          "null_count": 0
+        }
+      },
+      {
+        "name": "non_finite_values",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Non-finite (NaN/Inf) values across numeric fields: 0",
+        "counts": {
+          "non_finite_count": 0
+        }
+      },
+      {
+        "name": "negative_sales",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Negative sale_amount occurrences: 0",
+        "counts": {
+          "negative_sales_count": 0
+        }
+      },
+      {
+        "name": "natural_key_duplicates",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Duplicate natural key (store_id, product_id, dt) groups: 0",
+        "counts": {
+          "duplicate_groups": 0
+        }
+      },
+      {
+        "name": "binary_flags_validity",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Invalid holiday_flag or activity_flag non-binary values: 0",
+        "counts": {
+          "invalid_flags_count": 0
+        }
+      },
+      {
+        "name": "date_format_check",
+        "status": "PASS",
+        "expected": 0,
+        "actual": 0,
+        "explanation": "Dates failing ISO YYYY-MM-DD parsing: 0",
+        "counts": {
+          "invalid_dates_count": 0
+        }
+      },
+      {
+        "name": "unique_stores",
+        "status": "PASS",
+        "expected": 898,
+        "actual": 898,
+        "explanation": "Unique store count: 898",
+        "counts": {}
+      },
+      {
+        "name": "unique_products",
+        "status": "PASS",
+        "expected": 865,
+        "actual": 865,
+        "explanation": "Unique product count: 865",
+        "counts": {}
+      },
+      {
+        "name": "unique_series",
+        "status": "PASS",
+        "expected": 50000,
+        "actual": 50000,
+        "explanation": "Unique store-product series: 50,000",
+        "counts": {}
+      },
+      {
+        "name": "date_boundaries",
+        "status": "PASS",
+        "expected": "2024-06-26 to 2024-07-02",
+        "actual": "2024-06-26 to 2024-07-02",
+        "explanation": "Date range span: 2024-06-26 to 2024-07-02",
+        "counts": {}
+      },
+      {
+        "name": "date_continuity",
+        "status": "PASS",
+        "expected": 7,
+        "actual": 7,
+        "explanation": "Calendar date count: 7 days (calendar span: 7)",
+        "counts": {}
+      },
+      {
+        "name": "series_observation_balance",
+        "status": "PASS",
+        "expected": "Exactly 7 observations per series",
+        "actual": "Min: 7, Max: 7",
+        "explanation": "Each of the 50,000 series contains 7 to 7 observations",
+        "counts": {
+          "min_days_per_series": 7,
+          "max_days_per_series": 7
+        }
+      },
+      {
+        "name": "daily_record_balance",
+        "status": "PASS",
+        "expected": "Exactly 50,000 records per date",
+        "actual": "Min: 50,000, Max: 50,000",
+        "explanation": "Daily record counts across all 7 dates: 50,000 to 50,000",
+        "counts": {}
+      },
+      {
+        "name": "hourly_array_lengths",
+        "status": "PASS",
+        "expected": "Exactly 24 values per array",
+        "actual": "All 24 elements",
+        "explanation": "Array length validation across hours_sale and hours_stock_status",
+        "counts": {
+          "invalid_length_rows": 0
+        }
+      },
+      {
+        "name": "hourly_sales_validity",
+        "status": "PASS",
+        "expected": "Non-negative, finite, non-null values",
+        "actual": "0 negative/non-finite rows",
+        "explanation": "Hourly sales element values are valid and non-negative",
+        "counts": {}
+      },
+      {
+        "name": "hourly_stock_status_binary",
+        "status": "PASS",
+        "expected": "Strictly binary values in {0, 1}",
+        "actual": "0 non-binary rows",
+        "explanation": "Hourly stockout status elements are strictly binary flags (0=in-stock, 1=stockout)",
+        "counts": {}
+      },
+      {
+        "name": "daily_hourly_sales_reconciliation",
+        "status": "PASS",
+        "expected": "sale_amount == sum(hours_sale) within tolerance 1e-05",
+        "actual": "0 mismatches (max diff: 7.11e-15, mean diff: 5.54e-17)",
+        "explanation": "Daily recorded sales reconcile with the sum of hourly sales within float precision",
+        "counts": {
+          "mismatch_count": 0,
+          "max_diff": 7.105427357601002e-15,
+          "mean_diff": 5.537847957981512e-17,
+          "within_tolerance_rows": 350000
+        }
+      },
+      {
+        "name": "stockout_count_reconciliation",
+        "status": "PASS",
+        "expected": "stock_hour6_22_cnt == sum(hours_stock_status[6:22])",
+        "actual": "0 mismatches (max diff: 0.0)",
+        "explanation": "Daytime stockout count aligns with the sum of hours 6 through 21",
+        "counts": {
+          "mismatch_count": 0,
+          "max_diff": 0.0
+        }
+      },
+      {
+        "name": "discount_non_negative",
+        "status": "PASS",
+        "expected": "discount >= 0.0",
+        "actual": "Zero negative discount values",
+        "explanation": "Discount rates are non-negative across all records",
+        "counts": {}
+      },
+      {
+        "name": "discount_ceiling_anomaly",
+        "status": "PASS",
+        "expected": "discount <= 1.0",
+        "actual": "Max discount: 1.0",
+        "explanation": "All discount values are <= 1.0",
+        "counts": {}
+      }
+    ],
+    "diagnostics": {
+      "stockout_diagnostics": {
+        "total_rows": 350000,
+        "daytime_no_stockout_rows": 206562,
+        "daytime_no_stockout_pct": 59.02,
+        "daytime_full_stockout_rows": 12541,
+        "full_day_stockout_rows": 11809,
+        "total_stockout_hours": 1913065,
+        "positive_sale_stockout_hours": 59300,
+        "pct_positive_sale_stockout_hours": 3.0997,
+        "sales_volume_during_stockout": 9080.19
+      },
+      "evaluation_cohort": {
+        "total_rows": 350000,
+        "daytime_no_stockout_rows": 206562,
+        "pct_daytime_no_stockout": 59.02,
+        "daytime_with_stockout_rows": 143438,
+        "pct_daytime_with_stockout": 40.98
+      }
+    }
+  },
+  "cross_partition": {
+    "dataset_name": "cross_partition",
+    "status": "PASS",
+    "summary_counts": {
+      "total": 2,
+      "pass": 2,
+      "warning": 0,
+      "fail": 0
+    },
+    "metadata": null,
+    "checks": [
+      {
+        "name": "temporal_partition_separation",
+        "status": "PASS",
+        "expected": "train_max_dt < eval_min_dt (2024-06-25 < 2024-06-26)",
+        "actual": "train max: 2024-06-25, eval min: 2024-06-26",
+        "explanation": "Training partition strictly precedes evaluation partition without temporal overlap",
+        "counts": {}
+      },
+      {
+        "name": "cross_partition_series_consistency",
+        "status": "PASS",
+        "expected": "100% series overlap between train and evaluation",
+        "actual": "Common series: 50,000, Train-only: 0, Eval-only: 0",
+        "explanation": "Training and evaluation partitions contain identical 50,000 store-product series",
+        "counts": {
+          "train_series": 50000,
+          "eval_series": 50000,
+          "common_series": 50000
+        }
+      }
+    ],
+    "diagnostics": {}
+  },
+  "evaluation_cohort": {
+    "total_rows": 350000,
+    "daytime_no_stockout_rows": 206562,
+    "pct_daytime_no_stockout": 59.02,
+    "daytime_with_stockout_rows": 143438,
+    "pct_daytime_with_stockout": 40.98
+  },
+  "system_info": {
+    "duckdb_threads": 2,
+    "duckdb_memory_limit": "512MB",
+    "batch_size": 5000
+  }
+}

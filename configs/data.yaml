@@ -14,12 +14,77 @@ target_column: "sale_amount"
 stockout_hourly_column: "hours_stock_status"
 stockout_daytime_count_column: "stock_hour6_22_cnt"
 
+# Expected row counts (preserved for backward compatibility)
 expected_rows:
   train: 4500000
   eval: 350000
 
+# Expected date boundaries (preserved for backward compatibility)
 date_boundaries:
   train_start: "2024-03-28"
   train_end: "2024-06-25"
   eval_start: "2024-06-26"
   eval_end: "2024-07-02"
+
+# Dataset size expectations
+dataset_size:
+  train:
+    rows: 4500000
+    columns: 19
+    dates: 90
+    series: 50000
+    start_date: "2024-03-28"
+    end_date: "2024-06-25"
+  eval:
+    rows: 350000
+    columns: 19
+    dates: 7
+    series: 50000
+    start_date: "2024-06-26"
+    end_date: "2024-07-02"
+
+# Entity counts across dataset
+expected_entities:
+  stores: 898
+  products: 865
+  store_product_series: 50000
+
+# Authoritative SHA-256 checksums from official Git LFS pointers
+checksums:
+  train_sha256: "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d"
+  eval_sha256: "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e"
+
+# Hourly sequence and reconciliation settings
+hourly_settings:
+  hours_per_day: 24
+  daytime_stockout_start: 6
+  daytime_stockout_end: 22  # exclusive (hours 6 through 21 inclusive = 16 hours)
+  sales_reconciliation_tolerance: 0.00001
+
+# Memory-efficient processing configuration
+processing:
+  batch_size: 5000
+  duckdb_threads: 2
+  duckdb_memory_limit: "512MB"
+
+# Complete 19-column schema and expected Arrow types
+expected_schema:
+  city_id: "int64"
+  store_id: "int64"
+  management_group_id: "int64"
+  first_category_id: "int64"
+  second_category_id: "int64"
+  third_category_id: "int64"
+  product_id: "int64"
+  dt: "string"
+  sale_amount: "double"
+  hours_sale: "list<item: double>"
+  stock_hour6_22_cnt: "int32"
+  hours_stock_status: "list<item: int64>"
+  discount: "double"
+  holiday_flag: "int32"
+  activity_flag: "int32"
+  precpt: "double"
+  avg_temperature: "double"
+  avg_humidity: "double"
+  avg_wind_level: "double"
