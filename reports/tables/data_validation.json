@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-30T13:35:47.748273+00:00",
+  "timestamp": "2026-10-30T14:51:08.645426+00:00",
   "overall_status": "WARNING",
   "train": {
     "dataset_name": "train",
@@ -259,6 +259,8 @@
         "explanation": "Array length validation across hours_sale and hours_stock_status",
         "counts": {
           "invalid_length_rows": 0,
+          "null_parent_sales_rows": 0,
+          "null_parent_stock_rows": 0,
           "null_parent_rows": 0
         }
       },
@@ -603,6 +605,8 @@
         "explanation": "Array length validation across hours_sale and hours_stock_status",
         "counts": {
           "invalid_length_rows": 0,
+          "null_parent_sales_rows": 0,
+          "null_parent_stock_rows": 0,
           "null_parent_rows": 0
         }
       },

@@ -66,6 +66,42 @@ def _types_match(actual_type: pa.DataType, expected_type_str: str) -> bool:
     return False
 
 
+def _is_numeric_type(arrow_type: pa.DataType | None) -> bool:
+    """Return True if Arrow type is numeric (float or integer)."""
+    if arrow_type is None:
+        return False
+    return pa.types.is_floating(arrow_type) or pa.types.is_integer(arrow_type)
+
+
+def _is_string_or_date_type(arrow_type: pa.DataType | None) -> bool:
+    """Return True if Arrow type is string, large_string, or date."""
+    if arrow_type is None:
+        return False
+    return (
+        pa.types.is_string(arrow_type)
+        or pa.types.is_large_string(arrow_type)
+        or pa.types.is_date(arrow_type)
+    )
+
+
+def _is_valid_hourly_sales_type(arrow_type: pa.DataType | None) -> bool:
+    """Return True if Arrow type is a list of numeric values."""
+    if arrow_type is None:
+        return False
+    if pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
+        return _is_numeric_type(arrow_type.value_type)
+    return False
+
+
+def _is_valid_hourly_stock_type(arrow_type: pa.DataType | None) -> bool:
+    """Return True if Arrow type is a list of integer values."""
+    if arrow_type is None:
+        return False
+    if pa.types.is_list(arrow_type) or pa.types.is_large_list(arrow_type):
+        return pa.types.is_integer(arrow_type.value_type)
+    return False
+
+
 def _get_relative_path_str(file_path: Path) -> str:
     """Get project-relative path as a forward-slash string."""
     root_dir = get_project_root()
@@ -405,24 +441,36 @@ def validate_general_integrity(
 
     # Negative recorded sales
     if "sale_amount" in actual_cols:
-        neg_sales = con.execute(
-            f"SELECT COUNT(*) FROM {parquet_sql} WHERE sale_amount < 0"
-        ).fetchone()[0]
-        status = (
-            ValidationStatus.PASS.value
-            if neg_sales == 0
-            else ValidationStatus.FAIL.value
-        )
-        checks.append(
-            ValidationCheck(
-                name="negative_sales",
-                status=status,
-                expected=0,
-                actual=int(neg_sales),
-                explanation=f"Negative sale_amount occurrences: {neg_sales}",
-                counts={"negative_sales_count": int(neg_sales)},
+        sale_field = schema.field("sale_amount")
+        if not _is_numeric_type(sale_field.type):
+            checks.append(
+                ValidationCheck(
+                    name="negative_sales",
+                    status=ValidationStatus.FAIL.value,
+                    expected="Numeric sale_amount (double)",
+                    actual=f"Invalid type: {sale_field.type}",
+                    explanation=("Cannot check negative sales on non-numeric column"),
+                )
             )
-        )
+        else:
+            neg_sales = con.execute(
+                f"SELECT COUNT(*) FROM {parquet_sql} WHERE sale_amount < 0"
+            ).fetchone()[0]
+            status = (
+                ValidationStatus.PASS.value
+                if neg_sales == 0
+                else ValidationStatus.FAIL.value
+            )
+            checks.append(
+                ValidationCheck(
+                    name="negative_sales",
+                    status=status,
+                    expected=0,
+                    actual=int(neg_sales),
+                    explanation=f"Negative sale_amount occurrences: {neg_sales}",
+                    counts={"negative_sales_count": int(neg_sales)},
+                )
+            )
     else:
         checks.append(
             ValidationCheck(
@@ -436,33 +484,48 @@ def validate_general_integrity(
 
     # Natural key duplicates on (store_id, product_id, dt)
     if {"store_id", "product_id", "dt"}.issubset(actual_cols):
-        dup_groups = con.execute(f"""
-            SELECT COUNT(*) FROM (
-                SELECT store_id, product_id, dt, COUNT(*) as cnt
-                FROM {parquet_sql}
-                GROUP BY store_id, product_id, dt
-                HAVING cnt > 1
+        key_types_valid = not any(
+            pa.types.is_nested(schema.field(c).type)
+            for c in ("store_id", "product_id", "dt")
+        )
+        if not key_types_valid:
+            checks.append(
+                ValidationCheck(
+                    name="natural_key_duplicates",
+                    status=ValidationStatus.FAIL.value,
+                    expected="Scalar store_id, product_id, dt columns",
+                    actual="Nested types found in natural key columns",
+                    explanation="Cannot group by nested columns for key duplicates",
+                )
             )
-        """).fetchone()[0]
+        else:
+            dup_groups = con.execute(f"""
+                SELECT COUNT(*) FROM (
+                    SELECT store_id, product_id, dt, COUNT(*) as cnt
+                    FROM {parquet_sql}
+                    GROUP BY store_id, product_id, dt
+                    HAVING cnt > 1
+                )
+            """).fetchone()[0]
 
-        status = (
-            ValidationStatus.PASS.value
-            if dup_groups == 0
-            else ValidationStatus.FAIL.value
-        )
-        checks.append(
-            ValidationCheck(
-                name="natural_key_duplicates",
-                status=status,
-                expected=0,
-                actual=int(dup_groups),
-                explanation=(
-                    f"Duplicate natural key (store_id, product_id, dt) "
-                    f"groups: {dup_groups}"
-                ),
-                counts={"duplicate_groups": int(dup_groups)},
+            status = (
+                ValidationStatus.PASS.value
+                if dup_groups == 0
+                else ValidationStatus.FAIL.value
             )
-        )
+            checks.append(
+                ValidationCheck(
+                    name="natural_key_duplicates",
+                    status=status,
+                    expected=0,
+                    actual=int(dup_groups),
+                    explanation=(
+                        f"Duplicate natural key (store_id, product_id, dt) "
+                        f"groups: {dup_groups}"
+                    ),
+                    counts={"duplicate_groups": int(dup_groups)},
+                )
+            )
     else:
         checks.append(
             ValidationCheck(
@@ -476,29 +539,45 @@ def validate_general_integrity(
 
     # Binary flags validity
     if {"holiday_flag", "activity_flag"}.issubset(actual_cols):
-        invalid_flags = con.execute(f"""
-            SELECT COUNT(*) FROM {parquet_sql}
-            WHERE holiday_flag NOT IN (0, 1) OR activity_flag NOT IN (0, 1)
-        """).fetchone()[0]
-
-        status = (
-            ValidationStatus.PASS.value
-            if invalid_flags == 0
-            else ValidationStatus.FAIL.value
+        hf_t = schema.field("holiday_flag").type
+        af_t = schema.field("activity_flag").type
+        flags_valid = (pa.types.is_integer(hf_t) or pa.types.is_boolean(hf_t)) and (
+            pa.types.is_integer(af_t) or pa.types.is_boolean(af_t)
         )
-        checks.append(
-            ValidationCheck(
-                name="binary_flags_validity",
-                status=status,
-                expected=0,
-                actual=int(invalid_flags),
-                explanation=(
-                    "Invalid holiday_flag or activity_flag non-binary values: "
-                    f"{invalid_flags}"
-                ),
-                counts={"invalid_flags_count": int(invalid_flags)},
+        if not flags_valid:
+            checks.append(
+                ValidationCheck(
+                    name="binary_flags_validity",
+                    status=ValidationStatus.FAIL.value,
+                    expected="Integer or boolean holiday_flag and activity_flag",
+                    actual=f"Invalid types: holiday={hf_t}, activity={af_t}",
+                    explanation=("Cannot validate binary flags on non-integer columns"),
+                )
             )
-        )
+        else:
+            invalid_flags = con.execute(f"""
+                SELECT COUNT(*) FROM {parquet_sql}
+                WHERE holiday_flag NOT IN (0, 1) OR activity_flag NOT IN (0, 1)
+            """).fetchone()[0]
+
+            status = (
+                ValidationStatus.PASS.value
+                if invalid_flags == 0
+                else ValidationStatus.FAIL.value
+            )
+            checks.append(
+                ValidationCheck(
+                    name="binary_flags_validity",
+                    status=status,
+                    expected=0,
+                    actual=int(invalid_flags),
+                    explanation=(
+                        "Invalid holiday_flag or activity_flag non-binary values: "
+                        f"{invalid_flags}"
+                    ),
+                    counts={"invalid_flags_count": int(invalid_flags)},
+                )
+            )
     else:
         checks.append(
             ValidationCheck(
@@ -512,26 +591,42 @@ def validate_general_integrity(
 
     # Date format check (ISO-8601 YYYY-MM-DD)
     if "dt" in actual_cols:
-        invalid_dates = con.execute(f"""
-            SELECT COUNT(*) FROM {parquet_sql}
-            WHERE try_strptime(dt, '%Y-%m-%d') IS NULL
-        """).fetchone()[0]
-
-        status = (
-            ValidationStatus.PASS.value
-            if invalid_dates == 0
-            else ValidationStatus.FAIL.value
-        )
-        checks.append(
-            ValidationCheck(
-                name="date_format_check",
-                status=status,
-                expected=0,
-                actual=int(invalid_dates),
-                explanation=f"Dates failing ISO YYYY-MM-DD parsing: {invalid_dates}",
-                counts={"invalid_dates_count": int(invalid_dates)},
+        dt_field = schema.field("dt")
+        if not _is_string_or_date_type(dt_field.type):
+            checks.append(
+                ValidationCheck(
+                    name="date_format_check",
+                    status=ValidationStatus.FAIL.value,
+                    expected="String column with YYYY-MM-DD format",
+                    actual=f"Invalid dt column type: {dt_field.type}",
+                    explanation=(
+                        "Cannot validate ISO date format on non-string column"
+                    ),
+                )
             )
-        )
+        else:
+            invalid_dates = con.execute(f"""
+                SELECT COUNT(*) FROM {parquet_sql}
+                WHERE try_strptime(CAST(dt AS VARCHAR), '%Y-%m-%d') IS NULL
+            """).fetchone()[0]
+
+            status = (
+                ValidationStatus.PASS.value
+                if invalid_dates == 0
+                else ValidationStatus.FAIL.value
+            )
+            checks.append(
+                ValidationCheck(
+                    name="date_format_check",
+                    status=status,
+                    expected=0,
+                    actual=int(invalid_dates),
+                    explanation=(
+                        f"Dates failing ISO YYYY-MM-DD parsing: {invalid_dates}"
+                    ),
+                    counts={"invalid_dates_count": int(invalid_dates)},
+                )
+            )
     else:
         checks.append(
             ValidationCheck(
@@ -655,57 +750,83 @@ def validate_entity_and_time_series(
     exp_start = expected_size.get("start_date")
     exp_end = expected_size.get("end_date")
     exp_days = expected_size.get("dates")
+    dt_type = schema.field("dt").type
+    dt_type_valid = _is_string_or_date_type(dt_type)
 
     if exp_start and exp_end:
-        date_bound_ok = (str(min_dt) == str(exp_start)) and (
-            str(max_dt) == str(exp_end)
-        )
-        checks.append(
-            ValidationCheck(
-                name="date_boundaries",
-                status=(
-                    ValidationStatus.PASS.value
-                    if date_bound_ok
-                    else ValidationStatus.FAIL.value
-                ),
-                expected=f"{exp_start} to {exp_end}",
-                actual=f"{min_dt} to {max_dt}",
-                explanation=f"Date range span: {min_dt} to {max_dt}",
-            )
-        )
-
-    if exp_days is not None:
-        try:
-            start_date = datetime.date.fromisoformat(str(min_dt))
-            end_date = datetime.date.fromisoformat(str(max_dt))
-            expected_calendar_span = (end_date - start_date).days + 1
-            continuous = (num_days == exp_days) and (num_days == expected_calendar_span)
+        if not dt_type_valid:
             checks.append(
                 ValidationCheck(
-                    name="date_continuity",
-                    status=(
-                        ValidationStatus.PASS.value
-                        if continuous
-                        else ValidationStatus.FAIL.value
-                    ),
-                    expected=exp_days,
-                    actual=int(num_days),
-                    explanation=(
-                        f"Calendar date count: {num_days} days "
-                        f"(calendar span: {expected_calendar_span})"
-                    ),
+                    name="date_boundaries",
+                    status=ValidationStatus.FAIL.value,
+                    expected=f"{exp_start} to {exp_end}",
+                    actual=f"Invalid dt column type: {dt_type}",
+                    explanation=("Cannot check date boundaries on non-string column"),
                 )
             )
-        except (ValueError, TypeError) as exc:
+        else:
+            date_bound_ok = (str(min_dt) == str(exp_start)) and (
+                str(max_dt) == str(exp_end)
+            )
+            checks.append(
+                ValidationCheck(
+                    name="date_boundaries",
+                    status=(
+                        ValidationStatus.PASS.value
+                        if date_bound_ok
+                        else ValidationStatus.FAIL.value
+                    ),
+                    expected=f"{exp_start} to {exp_end}",
+                    actual=f"{min_dt} to {max_dt}",
+                    explanation=f"Date range span: {min_dt} to {max_dt}",
+                )
+            )
+
+    if exp_days is not None:
+        if not dt_type_valid:
             checks.append(
                 ValidationCheck(
                     name="date_continuity",
                     status=ValidationStatus.FAIL.value,
                     expected=exp_days,
-                    actual=f"Invalid date format: {min_dt} to {max_dt}",
-                    explanation=f"Failed to parse date range: {exc}",
+                    actual=f"Invalid dt column type: {dt_type}",
+                    explanation=("Cannot check date continuity on non-string column"),
                 )
             )
+        else:
+            try:
+                start_date = datetime.date.fromisoformat(str(min_dt))
+                end_date = datetime.date.fromisoformat(str(max_dt))
+                expected_calendar_span = (end_date - start_date).days + 1
+                continuous = (num_days == exp_days) and (
+                    num_days == expected_calendar_span
+                )
+                checks.append(
+                    ValidationCheck(
+                        name="date_continuity",
+                        status=(
+                            ValidationStatus.PASS.value
+                            if continuous
+                            else ValidationStatus.FAIL.value
+                        ),
+                        expected=exp_days,
+                        actual=int(num_days),
+                        explanation=(
+                            f"Calendar date count: {num_days} days "
+                            f"(calendar span: {expected_calendar_span})"
+                        ),
+                    )
+                )
+            except (ValueError, TypeError) as exc:
+                checks.append(
+                    ValidationCheck(
+                        name="date_continuity",
+                        status=ValidationStatus.FAIL.value,
+                        expected=exp_days,
+                        actual=f"Invalid date format: {min_dt} to {max_dt}",
+                        explanation=f"Failed to parse date range: {exc}",
+                    )
+                )
 
     series_days_dist = con.execute(f"""
         SELECT MIN(cnt), MAX(cnt)
@@ -840,8 +961,30 @@ def validate_hourly_data(
             )
         return checks, diagnostics
 
+    sale_field = schema.field("sale_amount")
+    hours_sale_field = schema.field("hours_sale")
+    stock_cnt_field = schema.field("stock_hour6_22_cnt")
+    hours_stock_field = schema.field("hours_stock_status")
+
+    is_sale_amt_numeric = _is_numeric_type(sale_field.type)
+    is_hours_sale_list = pa.types.is_list(
+        hours_sale_field.type
+    ) or pa.types.is_large_list(hours_sale_field.type)
+    is_hours_sale_valid = is_hours_sale_list and _is_numeric_type(
+        hours_sale_field.type.value_type
+    )
+    is_stock_cnt_int = pa.types.is_integer(stock_cnt_field.type)
+    is_hours_stock_list = pa.types.is_list(
+        hours_stock_field.type
+    ) or pa.types.is_large_list(hours_stock_field.type)
+    is_hours_stock_valid = is_hours_stock_list and pa.types.is_integer(
+        hours_stock_field.type.value_type
+    )
+
     total_rows = 0
     invalid_array_length_count = 0
+    null_parent_sales_rows = 0
+    null_parent_stock_rows = 0
     null_parent_array_count = 0
     null_child_sales_rows = 0
     null_child_stock_rows = 0
@@ -880,386 +1023,472 @@ def validate_hourly_data(
         if isinstance(hours_stock_col, pa.ChunkedArray):
             hours_stock_col = hours_stock_col.combine_chunks()
 
-        # Parent null detection
-        sale_parent_nulls = hours_sale_col.is_null().to_numpy(zero_copy_only=False)
-        stock_parent_nulls = hours_stock_col.is_null().to_numpy(zero_copy_only=False)
+        # Parent null and length verification for hours_sale
+        if is_hours_sale_list:
+            sale_parent_nulls = hours_sale_col.is_null().to_numpy(zero_copy_only=False)
+            null_parent_sales_rows += int(sale_parent_nulls.sum())
+            sale_lens = (
+                hours_sale_col.value_lengths()
+                .fill_null(0)
+                .to_numpy(zero_copy_only=False)
+            )
+            bad_sale_len = (sale_lens != 24) | sale_parent_nulls
+        else:
+            sale_parent_nulls = np.zeros(n, dtype=bool)
+            bad_sale_len = np.ones(n, dtype=bool)
+
+        # Parent null and length verification for hours_stock_status
+        if is_hours_stock_list:
+            stock_parent_nulls = hours_stock_col.is_null().to_numpy(
+                zero_copy_only=False
+            )
+            null_parent_stock_rows += int(stock_parent_nulls.sum())
+            stock_lens = (
+                hours_stock_col.value_lengths()
+                .fill_null(0)
+                .to_numpy(zero_copy_only=False)
+            )
+            bad_stock_len = (stock_lens != 24) | stock_parent_nulls
+        else:
+            stock_parent_nulls = np.zeros(n, dtype=bool)
+            bad_stock_len = np.ones(n, dtype=bool)
+
         parent_null_mask = sale_parent_nulls | stock_parent_nulls
         null_parent_array_count += int(parent_null_mask.sum())
-
-        # Length verification (null parent yields length 0)
-        sale_lens = (
-            hours_sale_col.value_lengths().fill_null(0).to_numpy(zero_copy_only=False)
-        )
-        stock_lens = (
-            hours_stock_col.value_lengths().fill_null(0).to_numpy(zero_copy_only=False)
-        )
-        bad_len_mask = (sale_lens != 24) | (stock_lens != 24) | parent_null_mask
+        bad_len_mask = bad_sale_len | bad_stock_len
         invalid_array_length_count += int(bad_len_mask.sum())
 
-        child_sale_null_total = hours_sale_col.values.null_count
-        child_stock_null_total = hours_stock_col.values.null_count
+        # Sales element validation and reconciliation
+        sales_flat: np.ndarray | None = None
+        valid_sales_row: np.ndarray | None = None
+        if is_hours_sale_valid and is_sale_amt_numeric:
+            sale_amounts = sale_col.to_numpy(zero_copy_only=False)
+            if not bad_sale_len.any():
+                child_sale_null_total = hours_sale_col.values.null_count
+                if child_sale_null_total > 0:
+                    child_sale_null_bits = (
+                        hours_sale_col.values.is_null()
+                        .to_numpy(zero_copy_only=False)
+                        .reshape(n, 24)
+                    )
+                    child_sale_null_rows = child_sale_null_bits.any(axis=1)
+                    null_child_sales_rows += int(child_sale_null_rows.sum())
+                else:
+                    child_sale_null_bits = np.zeros((n, 24), dtype=bool)
+                    child_sale_null_rows = np.zeros(n, dtype=bool)
 
-        sale_amounts = sale_col.to_numpy(zero_copy_only=False)
-        stock_counts = stock_cnt_col.to_numpy(zero_copy_only=False)
-
-        # Vectorized path: valid when all arrays in batch have length 24
-        if not bad_len_mask.any():
-            if child_sale_null_total > 0:
-                child_sale_null_bits = (
-                    hours_sale_col.values.is_null()
-                    .to_numpy(zero_copy_only=False)
-                    .reshape(n, 24)
-                )
-                child_sale_null_rows = child_sale_null_bits.any(axis=1)
-                null_child_sales_rows += int(child_sale_null_rows.sum())
-            else:
-                child_sale_null_bits = np.zeros((n, 24), dtype=bool)
-                child_sale_null_rows = np.zeros(n, dtype=bool)
-
-            if child_stock_null_total > 0:
-                child_stock_null_bits = (
-                    hours_stock_col.values.is_null()
-                    .to_numpy(zero_copy_only=False)
-                    .reshape(n, 24)
-                )
-                child_stock_null_rows = child_stock_null_bits.any(axis=1)
-                null_child_stock_rows += int(child_stock_null_rows.sum())
-            else:
-                child_stock_null_bits = np.zeros((n, 24), dtype=bool)
-                child_stock_null_rows = np.zeros(n, dtype=bool)
-
-            sales_flat = hours_sale_col.values.to_numpy(zero_copy_only=False).reshape(
-                n, 24
-            )
-
-            # Detect floating-point NaN (excluding Arrow nulls) and Infinity
-            nan_mask = np.isnan(sales_flat) & ~child_sale_null_bits
-            inf_mask = np.isinf(sales_flat)
-            non_finite_mask = nan_mask | inf_mask
-            row_has_non_finite = non_finite_mask.any(axis=1)
-            non_finite_hourly_sales_count += int(row_has_non_finite.sum())
-
-            # Detect negative sales (strictly finite negative numbers)
-            negative_mask = (sales_flat < 0) & np.isfinite(sales_flat)
-            row_has_negative = negative_mask.any(axis=1)
-            negative_hourly_sales_count += int(row_has_negative.sum())
-
-            # Stockout binary validation
-            if child_stock_null_total == 0:
-                stock_flat = hours_stock_col.values.to_numpy().reshape(n, 24)
-                non_binary_mask = ~np.isin(stock_flat, [0, 1])
-            else:
-                stock_flat_raw = hours_stock_col.values.to_numpy(
+                sales_flat = hours_sale_col.values.to_numpy(
                     zero_copy_only=False
                 ).reshape(n, 24)
-                non_binary_mask = (
-                    ~np.isin(stock_flat_raw, [0, 1])
-                ) & ~child_stock_null_bits
-                stock_flat = np.nan_to_num(stock_flat_raw, nan=-1.0).astype(np.int64)
+                nan_mask = np.isnan(sales_flat) & ~child_sale_null_bits
+                inf_mask = np.isinf(sales_flat)
+                non_finite_mask = nan_mask | inf_mask
+                row_has_non_finite = non_finite_mask.any(axis=1)
+                non_finite_hourly_sales_count += int(row_has_non_finite.sum())
 
-            row_has_non_binary = (non_binary_mask | child_stock_null_bits).any(axis=1)
-            non_binary_stock_status_count += int(row_has_non_binary.sum())
+                negative_mask = (sales_flat < 0) & np.isfinite(sales_flat)
+                row_has_negative = negative_mask.any(axis=1)
+                negative_hourly_sales_count += int(row_has_negative.sum())
 
-            # Sales reconciliation: row is eligible only if numeric, finite, non-null
-            valid_sales_row = (
-                (~child_sale_null_rows)
-                & (~row_has_non_finite)
-                & np.isfinite(sale_amounts)
-            )
-            invalid_sales_rows = ~valid_sales_row
-
-            if valid_sales_row.any():
-                valid_sums = sales_flat[valid_sales_row].sum(axis=1)
-                valid_diffs = np.abs(sale_amounts[valid_sales_row] - valid_sums)
-                tol_mismatches = valid_diffs > tolerance
-                batch_max = float(valid_diffs.max())
-                if batch_max > max_sales_diff:
-                    max_sales_diff = batch_max
-                sum_sales_diff += float(valid_diffs.sum())
-                finite_sales_diff_count += int(valid_sales_row.sum())
-                batch_sales_mismatches = int(invalid_sales_rows.sum()) + int(
-                    tol_mismatches.sum()
+                valid_sales_row = (
+                    (~child_sale_null_rows)
+                    & (~row_has_non_finite)
+                    & np.isfinite(sale_amounts)
                 )
+                if valid_sales_row.any():
+                    valid_sums = sales_flat[valid_sales_row].sum(axis=1)
+                    valid_diffs = np.abs(sale_amounts[valid_sales_row] - valid_sums)
+                    tol_mismatches = valid_diffs > tolerance
+                    batch_max = float(valid_diffs.max())
+                    if batch_max > max_sales_diff:
+                        max_sales_diff = batch_max
+                    sum_sales_diff += float(valid_diffs.sum())
+                    finite_sales_diff_count += int(valid_sales_row.sum())
+                    sales_mismatch_count += int((~valid_sales_row).sum()) + int(
+                        tol_mismatches.sum()
+                    )
+                else:
+                    sales_mismatch_count += n
             else:
-                batch_sales_mismatches = n
-
-            sales_mismatch_count += batch_sales_mismatches
-
-            # Daytime stockout count reconciliation
-            valid_stock_row = (
-                (~child_stock_null_rows)
-                & (~non_binary_mask.any(axis=1))
-                & np.isfinite(stock_counts)
-            )
-            invalid_stock_rows = ~valid_stock_row
-
-            if valid_stock_row.any():
-                daytime_slice = stock_flat[valid_stock_row, daytime_start:daytime_end]
-                daytime_sums = daytime_slice.sum(axis=1)
-                stock_diffs = np.abs(stock_counts[valid_stock_row] - daytime_sums)
-                tol_stock_mismatches = stock_diffs != 0
-                batch_stock_max = float(stock_diffs.max())
-                if batch_stock_max > max_stock_diff:
-                    max_stock_diff = batch_stock_max
-                batch_stock_mismatches = int(invalid_stock_rows.sum()) + int(
-                    tol_stock_mismatches.sum()
-                )
-            else:
-                batch_stock_mismatches = n
-
-            stock_count_mismatches += batch_stock_mismatches
-
-            # Diagnostics on valid clean rows
-            clean_mask = valid_sales_row & valid_stock_row
-            if clean_mask.any():
-                clean_sales = sales_flat[clean_mask]
-                clean_stock = stock_flat[clean_mask]
-                clean_stock_counts = stock_counts[clean_mask]
-
-                daytime_no_stockout_rows += int((clean_stock_counts == 0).sum())
-                daytime_full_stockout_rows += int((clean_stock_counts == 16).sum())
-                full_day_stockout_rows += int((clean_stock.sum(axis=1) == 24).sum())
-
-                stockout_mask = clean_stock == 1
-                stockout_hours_total += int(stockout_mask.sum())
-                pos_sale_in_stockout = stockout_mask & (clean_sales > 0)
-                positive_sale_stockout_hours += int(pos_sale_in_stockout.sum())
-                sales_during_stockout_volume += float(
-                    clean_sales[pos_sale_in_stockout].sum()
-                )
-
-        else:
-            # Fallback path: inspect row-by-row when batch contains malformed arrays
-            for i in range(n):
-                s_parent_null = bool(sale_parent_nulls[i])
-                st_parent_null = bool(stock_parent_nulls[i])
-
-                s_val = hours_sale_col[i].as_py() if not s_parent_null else None
-                st_val = hours_stock_col[i].as_py() if not st_parent_null else None
-
-                s_len_ok = (s_val is not None) and (len(s_val) == 24)
-                st_len_ok = (st_val is not None) and (len(st_val) == 24)
-
-                s_row_valid = False
-                st_row_valid = False
-
-                if s_len_ok:
-                    has_child_null = any(x is None for x in s_val)
-                    if has_child_null:
-                        null_child_sales_rows += 1
-                        sales_mismatch_count += 1
-                    else:
-                        s_arr = np.array(s_val, dtype=np.float64)
-                        nan_any = np.isnan(s_arr).any()
-                        inf_any = np.isinf(s_arr).any()
-                        if nan_any or inf_any:
-                            non_finite_hourly_sales_count += 1
+                # Row-by-row fallback for sales
+                valid_sales_flags = np.zeros(n, dtype=bool)
+                sales_flat = np.zeros((n, 24), dtype=np.float64)
+                for i in range(n):
+                    s_p_null = bool(sale_parent_nulls[i])
+                    s_val = hours_sale_col[i].as_py() if not s_p_null else None
+                    if s_val is not None and len(s_val) == 24:
+                        if any(x is None for x in s_val):
+                            null_child_sales_rows += 1
                             sales_mismatch_count += 1
                         else:
-                            if (s_arr < 0).any():
-                                negative_hourly_sales_count += 1
-
-                            # Numeric reconciliation
-                            amt = sale_amounts[i]
-                            if amt is not None and np.isfinite(amt):
-                                h_sum = float(s_arr.sum())
-                                diff = abs(float(amt) - h_sum)
-                                if diff > tolerance:
-                                    sales_mismatch_count += 1
-                                if diff > max_sales_diff:
-                                    max_sales_diff = diff
-                                sum_sales_diff += diff
-                                finite_sales_diff_count += 1
-                                s_row_valid = True
-                            else:
+                            s_arr = np.array(s_val, dtype=np.float64)
+                            nan_any = np.isnan(s_arr).any()
+                            inf_any = np.isinf(s_arr).any()
+                            if nan_any or inf_any:
+                                non_finite_hourly_sales_count += 1
                                 sales_mismatch_count += 1
-                else:
-                    sales_mismatch_count += 1
-
-                if st_len_ok:
-                    has_st_null = any(x is None for x in st_val)
-                    if has_st_null:
-                        null_child_stock_rows += 1
-                        stock_count_mismatches += 1
+                            else:
+                                if (s_arr < 0).any():
+                                    negative_hourly_sales_count += 1
+                                amt = sale_amounts[i]
+                                if amt is not None and np.isfinite(amt):
+                                    h_sum = float(s_arr.sum())
+                                    diff = abs(float(amt) - h_sum)
+                                    if diff > tolerance:
+                                        sales_mismatch_count += 1
+                                    if diff > max_sales_diff:
+                                        max_sales_diff = diff
+                                    sum_sales_diff += diff
+                                    finite_sales_diff_count += 1
+                                    valid_sales_flags[i] = True
+                                    sales_flat[i] = s_arr
+                                else:
+                                    sales_mismatch_count += 1
                     else:
-                        st_arr = np.array(st_val, dtype=np.int64)
-                        if not np.isin(st_arr, [0, 1]).all():
-                            non_binary_stock_status_count += 1
+                        sales_mismatch_count += 1
+                valid_sales_row = valid_sales_flags
+        else:
+            sales_mismatch_count += n
+
+        # Stock element validation and daytime reconciliation
+        stock_flat: np.ndarray | None = None
+        valid_stock_row: np.ndarray | None = None
+        clean_stock_counts: np.ndarray | None = None
+        if is_hours_stock_valid and is_stock_cnt_int:
+            stock_counts = stock_cnt_col.to_numpy(zero_copy_only=False)
+            if not bad_stock_len.any():
+                child_stock_null_total = hours_stock_col.values.null_count
+                if child_stock_null_total > 0:
+                    child_stock_null_bits = (
+                        hours_stock_col.values.is_null()
+                        .to_numpy(zero_copy_only=False)
+                        .reshape(n, 24)
+                    )
+                    child_stock_null_rows = child_stock_null_bits.any(axis=1)
+                    null_child_stock_rows += int(child_stock_null_rows.sum())
+                    stock_flat_raw = hours_stock_col.values.to_numpy(
+                        zero_copy_only=False
+                    ).reshape(n, 24)
+                    non_binary_mask = (
+                        ~np.isin(stock_flat_raw, [0, 1])
+                    ) & ~child_stock_null_bits
+                    stock_flat = np.nan_to_num(stock_flat_raw, nan=-1.0).astype(
+                        np.int64
+                    )
+                    row_has_non_binary = (non_binary_mask | child_stock_null_bits).any(
+                        axis=1
+                    )
+                else:
+                    child_stock_null_rows = np.zeros(n, dtype=bool)
+                    stock_flat = hours_stock_col.values.to_numpy().reshape(n, 24)
+                    non_binary_mask = ~np.isin(stock_flat, [0, 1])
+                    row_has_non_binary = non_binary_mask.any(axis=1)
+
+                non_binary_stock_status_count += int(row_has_non_binary.sum())
+
+                valid_stock_row = (
+                    (~child_stock_null_rows)
+                    & (~non_binary_mask.any(axis=1))
+                    & np.isfinite(stock_counts)
+                )
+                if valid_stock_row.any():
+                    daytime_slice = stock_flat[
+                        valid_stock_row, daytime_start:daytime_end
+                    ]
+                    daytime_sums = daytime_slice.sum(axis=1)
+                    stock_diffs = np.abs(stock_counts[valid_stock_row] - daytime_sums)
+                    tol_stock_mismatches = stock_diffs != 0
+                    batch_stock_max = float(stock_diffs.max())
+                    if batch_stock_max > max_stock_diff:
+                        max_stock_diff = batch_stock_max
+                    stock_count_mismatches += int((~valid_stock_row).sum()) + int(
+                        tol_stock_mismatches.sum()
+                    )
+                else:
+                    stock_count_mismatches += n
+                clean_stock_counts = stock_counts
+            else:
+                # Row-by-row fallback for stock
+                valid_stock_flags = np.zeros(n, dtype=bool)
+                stock_flat = np.zeros((n, 24), dtype=np.int64)
+                for i in range(n):
+                    st_p_null = bool(stock_parent_nulls[i])
+                    st_val = hours_stock_col[i].as_py() if not st_p_null else None
+                    if st_val is not None and len(st_val) == 24:
+                        if any(x is None for x in st_val):
+                            null_child_stock_rows += 1
                             stock_count_mismatches += 1
                         else:
-                            cnt = stock_counts[i]
-                            if cnt is not None and np.isfinite(cnt):
-                                d_sum = int(st_arr[daytime_start:daytime_end].sum())
-                                s_diff = abs(int(cnt) - d_sum)
-                                if s_diff != 0:
-                                    stock_count_mismatches += 1
-                                if s_diff > max_stock_diff:
-                                    max_stock_diff = float(s_diff)
-                                st_row_valid = True
-                            else:
+                            st_arr = np.array(st_val, dtype=np.int64)
+                            if not np.isin(st_arr, [0, 1]).all():
+                                non_binary_stock_status_count += 1
                                 stock_count_mismatches += 1
-                else:
-                    stock_count_mismatches += 1
+                            else:
+                                cnt = stock_counts[i]
+                                if cnt is not None and np.isfinite(cnt):
+                                    d_sum = int(st_arr[daytime_start:daytime_end].sum())
+                                    s_diff = abs(int(cnt) - d_sum)
+                                    if s_diff != 0:
+                                        stock_count_mismatches += 1
+                                    if s_diff > max_stock_diff:
+                                        max_stock_diff = float(s_diff)
+                                    valid_stock_flags[i] = True
+                                    stock_flat[i] = st_arr
+                                else:
+                                    stock_count_mismatches += 1
+                    else:
+                        stock_count_mismatches += 1
+                valid_stock_row = valid_stock_flags
+                clean_stock_counts = stock_counts
+        else:
+            stock_count_mismatches += n
 
-                # Clean diagnostics in fallback
-                if s_row_valid and st_row_valid:
-                    if stock_counts[i] == 0:
-                        daytime_no_stockout_rows += 1
-                    if stock_counts[i] == 16:
-                        daytime_full_stockout_rows += 1
-                    if int(st_arr.sum()) == 24:
-                        full_day_stockout_rows += 1
+        # Diagnostics on valid clean rows
+        if (
+            stock_flat is not None
+            and valid_stock_row is not None
+            and clean_stock_counts is not None
+        ):
+            if valid_stock_row.any():
+                v_counts = clean_stock_counts[valid_stock_row]
+                v_stock = stock_flat[valid_stock_row]
+                daytime_no_stockout_rows += int((v_counts == 0).sum())
+                daytime_full_stockout_rows += int((v_counts == 16).sum())
+                full_day_stockout_rows += int((v_stock.sum(axis=1) == 24).sum())
 
-                    for h in range(24):
-                        if st_arr[h] == 1:
-                            stockout_hours_total += 1
-                            if s_arr[h] > 0:
-                                positive_sale_stockout_hours += 1
-                                sales_during_stockout_volume += float(s_arr[h])
+                stockout_mask = v_stock == 1
+                stockout_hours_total += int(stockout_mask.sum())
+
+                if sales_flat is not None and valid_sales_row is not None:
+                    clean_mask = valid_sales_row & valid_stock_row
+                    if clean_mask.any():
+                        c_sales = sales_flat[clean_mask]
+                        c_stock = stock_flat[clean_mask]
+                        c_st_mask = c_stock == 1
+                        pos_in_st = c_st_mask & (c_sales > 0)
+                        positive_sale_stockout_hours += int(pos_in_st.sum())
+                        sales_during_stockout_volume += float(c_sales[pos_in_st].sum())
 
     # 1. Array length check
-    len_status = (
-        ValidationStatus.PASS.value
-        if (invalid_array_length_count == 0 and null_parent_array_count == 0)
-        else ValidationStatus.FAIL.value
-    )
-    checks.append(
-        ValidationCheck(
-            name="hourly_array_lengths",
-            status=len_status,
-            expected="Exactly 24 elements per array with non-null parents",
-            actual=(
-                f"{invalid_array_length_count} invalid length rows, "
-                f"{null_parent_array_count} null parent rows"
-                if (invalid_array_length_count or null_parent_array_count)
-                else "All 24 elements with non-null parents"
-            ),
-            explanation=(
-                "Array length validation across hours_sale and hours_stock_status"
-            ),
-            counts={
-                "invalid_length_rows": invalid_array_length_count,
-                "null_parent_rows": null_parent_array_count,
-            },
+    if not is_hours_sale_list or not is_hours_stock_list:
+        checks.append(
+            ValidationCheck(
+                name="hourly_array_lengths",
+                status=ValidationStatus.FAIL.value,
+                expected="List arrays for hours_sale and hours_stock_status",
+                actual=(
+                    f"hours_sale: {hours_sale_field.type}, "
+                    f"hours_stock_status: {hours_stock_field.type}"
+                ),
+                explanation="Cannot validate array lengths on non-list columns",
+            )
         )
-    )
+    else:
+        len_status = (
+            ValidationStatus.PASS.value
+            if (invalid_array_length_count == 0 and null_parent_array_count == 0)
+            else ValidationStatus.FAIL.value
+        )
+        checks.append(
+            ValidationCheck(
+                name="hourly_array_lengths",
+                status=len_status,
+                expected="Exactly 24 elements per array with non-null parents",
+                actual=(
+                    f"{invalid_array_length_count} invalid length rows, "
+                    f"{null_parent_array_count} null parent rows "
+                    f"({null_parent_sales_rows} sales nulls, "
+                    f"{null_parent_stock_rows} stock nulls)"
+                    if (invalid_array_length_count or null_parent_array_count)
+                    else "All 24 elements with non-null parents"
+                ),
+                explanation=(
+                    "Array length validation across hours_sale and hours_stock_status"
+                ),
+                counts={
+                    "invalid_length_rows": invalid_array_length_count,
+                    "null_parent_sales_rows": null_parent_sales_rows,
+                    "null_parent_stock_rows": null_parent_stock_rows,
+                    "null_parent_rows": null_parent_array_count,
+                },
+            )
+        )
 
     # 2. Hourly sales element validity
-    sales_elem_status = (
-        ValidationStatus.PASS.value
-        if (
-            negative_hourly_sales_count == 0
-            and non_finite_hourly_sales_count == 0
-            and null_child_sales_rows == 0
-            and null_parent_array_count == 0
+    if not is_hours_sale_valid:
+        checks.append(
+            ValidationCheck(
+                name="hourly_sales_validity",
+                status=ValidationStatus.FAIL.value,
+                expected="List of numeric values",
+                actual=f"Invalid type: {hours_sale_field.type}",
+                explanation=(
+                    "Cannot validate hourly sales elements on non-numeric list column"
+                ),
+            )
         )
-        else ValidationStatus.FAIL.value
-    )
-    checks.append(
-        ValidationCheck(
-            name="hourly_sales_validity",
-            status=sales_elem_status,
-            expected="Finite, non-negative, and non-null values",
-            actual=(
-                f"Negative: {negative_hourly_sales_count}, "
-                f"Non-finite: {non_finite_hourly_sales_count}, "
-                f"Child nulls: {null_child_sales_rows}, "
-                f"Parent nulls: {null_parent_array_count}"
-            ),
-            explanation=(
-                "Hourly sales values must be finite, non-negative real numbers"
-            ),
-            counts={
-                "negative_sales_rows": negative_hourly_sales_count,
-                "non_finite_sales_rows": non_finite_hourly_sales_count,
-                "null_child_sales_rows": null_child_sales_rows,
-                "null_parent_sales_rows": null_parent_array_count,
-            },
+    else:
+        sales_elem_status = (
+            ValidationStatus.PASS.value
+            if (
+                negative_hourly_sales_count == 0
+                and non_finite_hourly_sales_count == 0
+                and null_child_sales_rows == 0
+                and null_parent_sales_rows == 0
+            )
+            else ValidationStatus.FAIL.value
         )
-    )
+        checks.append(
+            ValidationCheck(
+                name="hourly_sales_validity",
+                status=sales_elem_status,
+                expected="Finite, non-negative, and non-null values",
+                actual=(
+                    f"Negative: {negative_hourly_sales_count}, "
+                    f"Non-finite: {non_finite_hourly_sales_count}, "
+                    f"Child nulls: {null_child_sales_rows}, "
+                    f"Parent nulls: {null_parent_sales_rows}"
+                ),
+                explanation=(
+                    "Hourly sales values must be finite, non-negative real numbers"
+                ),
+                counts={
+                    "negative_sales_rows": negative_hourly_sales_count,
+                    "non_finite_sales_rows": non_finite_hourly_sales_count,
+                    "null_child_sales_rows": null_child_sales_rows,
+                    "null_parent_sales_rows": null_parent_sales_rows,
+                },
+            )
+        )
 
     # 3. Stockout status binary validity
-    stock_status_val = (
-        ValidationStatus.PASS.value
-        if (
-            non_binary_stock_status_count == 0
-            and null_child_stock_rows == 0
-            and null_parent_array_count == 0
+    if not is_hours_stock_valid:
+        checks.append(
+            ValidationCheck(
+                name="hourly_stock_status_binary",
+                status=ValidationStatus.FAIL.value,
+                expected="List of integer values",
+                actual=f"Invalid type: {hours_stock_field.type}",
+                explanation=("Cannot validate stock status on non-integer list column"),
+            )
         )
-        else ValidationStatus.FAIL.value
-    )
-    checks.append(
-        ValidationCheck(
-            name="hourly_stock_status_binary",
-            status=stock_status_val,
-            expected="Strictly binary values in {0, 1} with zero nulls",
-            actual=(
-                f"Non-binary: {non_binary_stock_status_count}, "
-                f"Child nulls: {null_child_stock_rows}, "
-                f"Parent nulls: {null_parent_array_count}"
-            ),
-            explanation=(
-                "Hourly stockout flags must be strictly binary integers {0, 1}"
-            ),
-            counts={
-                "non_binary_rows": non_binary_stock_status_count,
-                "null_child_stock_rows": null_child_stock_rows,
-                "null_parent_stock_rows": null_parent_array_count,
-            },
+    else:
+        stock_status_val = (
+            ValidationStatus.PASS.value
+            if (
+                non_binary_stock_status_count == 0
+                and null_child_stock_rows == 0
+                and null_parent_stock_rows == 0
+            )
+            else ValidationStatus.FAIL.value
         )
-    )
+        checks.append(
+            ValidationCheck(
+                name="hourly_stock_status_binary",
+                status=stock_status_val,
+                expected="Strictly binary values in {0, 1} with zero nulls",
+                actual=(
+                    f"Non-binary: {non_binary_stock_status_count}, "
+                    f"Child nulls: {null_child_stock_rows}, "
+                    f"Parent nulls: {null_parent_stock_rows}"
+                ),
+                explanation=(
+                    "Hourly stockout flags must be strictly binary integers {0, 1}"
+                ),
+                counts={
+                    "non_binary_rows": non_binary_stock_status_count,
+                    "null_child_stock_rows": null_child_stock_rows,
+                    "null_parent_stock_rows": null_parent_stock_rows,
+                },
+            )
+        )
 
     # 4. Daily and hourly sales reconciliation
-    mean_sales_diff = (
-        sum_sales_diff / finite_sales_diff_count if finite_sales_diff_count > 0 else 0.0
-    )
-    rec_status = (
-        ValidationStatus.PASS.value
-        if sales_mismatch_count == 0
-        else ValidationStatus.FAIL.value
-    )
-    checks.append(
-        ValidationCheck(
-            name="daily_hourly_sales_reconciliation",
-            status=rec_status,
-            expected=(f"sale_amount == sum(hours_sale) within tolerance {tolerance}"),
-            actual=(
-                f"{sales_mismatch_count} mismatches "
-                f"(max diff: {max_sales_diff:.2e}, mean diff: {mean_sales_diff:.2e})"
-            ),
-            explanation=("Daily recorded sales reconcile with sum of hourly sales"),
-            counts={
-                "mismatch_count": sales_mismatch_count,
-                "max_diff": max_sales_diff,
-                "mean_diff": mean_sales_diff,
-                "within_tolerance_rows": max(0, total_rows - sales_mismatch_count),
-            },
+    if not (is_sale_amt_numeric and is_hours_sale_valid):
+        checks.append(
+            ValidationCheck(
+                name="daily_hourly_sales_reconciliation",
+                status=ValidationStatus.FAIL.value,
+                expected="Numeric sale_amount and list of numeric hours_sale",
+                actual=(
+                    f"sale_amount: {sale_field.type}, "
+                    f"hours_sale: {hours_sale_field.type}"
+                ),
+                explanation="Cannot reconcile sales on invalid column types",
+            )
         )
-    )
+    else:
+        mean_sales_diff = (
+            sum_sales_diff / finite_sales_diff_count
+            if finite_sales_diff_count > 0
+            else 0.0
+        )
+        rec_status = (
+            ValidationStatus.PASS.value
+            if sales_mismatch_count == 0
+            else ValidationStatus.FAIL.value
+        )
+        checks.append(
+            ValidationCheck(
+                name="daily_hourly_sales_reconciliation",
+                status=rec_status,
+                expected=(
+                    f"sale_amount == sum(hours_sale) within tolerance {tolerance}"
+                ),
+                actual=(
+                    f"{sales_mismatch_count} mismatches "
+                    f"(max diff: {max_sales_diff:.2e}, "
+                    f"mean diff: {mean_sales_diff:.2e})"
+                ),
+                explanation=("Daily recorded sales reconcile with sum of hourly sales"),
+                counts={
+                    "mismatch_count": sales_mismatch_count,
+                    "max_diff": max_sales_diff,
+                    "mean_diff": mean_sales_diff,
+                    "within_tolerance_rows": max(0, total_rows - sales_mismatch_count),
+                },
+            )
+        )
 
     # 5. Daytime stockout count reconciliation
-    stock_rec_status = (
-        ValidationStatus.PASS.value
-        if stock_count_mismatches == 0
-        else ValidationStatus.FAIL.value
-    )
-    checks.append(
-        ValidationCheck(
-            name="stockout_count_reconciliation",
-            status=stock_rec_status,
-            expected="stock_hour6_22_cnt == sum(hours_stock_status[6:22])",
-            actual=(
-                f"{stock_count_mismatches} mismatches (max diff: {max_stock_diff})"
-            ),
-            explanation=(
-                "Daytime stockout count aligns with sum of hours 6 through 21"
-            ),
-            counts={
-                "mismatch_count": stock_count_mismatches,
-                "max_diff": max_stock_diff,
-            },
+    if not (is_stock_cnt_int and is_hours_stock_valid):
+        checks.append(
+            ValidationCheck(
+                name="stockout_count_reconciliation",
+                status=ValidationStatus.FAIL.value,
+                expected=(
+                    "Integer stock_hour6_22_cnt and list of integer hours_stock_status"
+                ),
+                actual=(
+                    f"stock_hour6_22_cnt: {stock_cnt_field.type}, "
+                    f"hours_stock_status: {hours_stock_field.type}"
+                ),
+                explanation="Cannot reconcile stock counts on invalid column types",
+            )
         )
-    )
+    else:
+        stock_rec_status = (
+            ValidationStatus.PASS.value
+            if stock_count_mismatches == 0
+            else ValidationStatus.FAIL.value
+        )
+        checks.append(
+            ValidationCheck(
+                name="stockout_count_reconciliation",
+                status=stock_rec_status,
+                expected="stock_hour6_22_cnt == sum(hours_stock_status[6:22])",
+                actual=(
+                    f"{stock_count_mismatches} mismatches (max diff: {max_stock_diff})"
+                ),
+                explanation=(
+                    "Daytime stockout count aligns with sum of hours 6 through 21"
+                ),
+                counts={
+                    "mismatch_count": stock_count_mismatches,
+                    "max_diff": max_stock_diff,
+                },
+            )
+        )
 
     pct_pos_sales_stockout = (
         (positive_sale_stockout_hours / stockout_hours_total * 100)
@@ -1321,6 +1550,28 @@ def validate_anomalies(
                 expected="discount column present",
                 actual="Column missing",
                 explanation="Cannot check discount ceiling: discount column missing",
+            )
+        )
+        return checks
+
+    disc_field = schema.field("discount")
+    if not _is_numeric_type(disc_field.type):
+        checks.append(
+            ValidationCheck(
+                name="discount_non_negative",
+                status=ValidationStatus.FAIL.value,
+                expected="Numeric discount column",
+                actual=f"Invalid type: {disc_field.type}",
+                explanation="Cannot check discount range on non-numeric column",
+            )
+        )
+        checks.append(
+            ValidationCheck(
+                name="discount_ceiling_anomaly",
+                status=ValidationStatus.FAIL.value,
+                expected="Numeric discount column",
+                actual=f"Invalid type: {disc_field.type}",
+                explanation="Cannot check discount ceiling on non-numeric column",
             )
         )
         return checks
@@ -1466,82 +1717,123 @@ def validate_cross_partition_consistency(
     train_sql = f"read_parquet('{train_path.as_posix()}')"
     eval_sql = f"read_parquet('{eval_path.as_posix()}')"
 
-    train_max_dt = con.execute(f"SELECT MAX(dt) FROM {train_sql}").fetchone()[0]
-    eval_min_dt = con.execute(f"SELECT MIN(dt) FROM {eval_sql}").fetchone()[0]
-
-    temporal_order_ok = (
-        train_max_dt is not None
-        and eval_min_dt is not None
-        and str(train_max_dt) < str(eval_min_dt)
-    )
-    result.add_check(
-        ValidationCheck(
-            name="temporal_partition_separation",
-            status=(
-                ValidationStatus.PASS.value
-                if temporal_order_ok
-                else ValidationStatus.FAIL.value
-            ),
-            expected=f"train_max_dt < eval_min_dt ({train_max_dt} < {eval_min_dt})",
-            actual=f"train max: {train_max_dt}, eval min: {eval_min_dt}",
-            explanation=(
-                "Training partition strictly precedes evaluation partition "
-                "without temporal overlap"
-            ),
+    # Validate dt column types for temporal separation
+    train_dt_t = train_schema.field("dt").type
+    eval_dt_t = eval_schema.field("dt").type
+    if not _is_string_or_date_type(train_dt_t) or not _is_string_or_date_type(
+        eval_dt_t
+    ):
+        result.add_check(
+            ValidationCheck(
+                name="temporal_partition_separation",
+                status=ValidationStatus.FAIL.value,
+                expected="String/date dt columns in both partitions",
+                actual=f"train dt: {train_dt_t}, eval dt: {eval_dt_t}",
+                explanation=(
+                    "Cannot verify temporal separation on non-string date columns"
+                ),
+            )
         )
-    )
+    else:
+        train_max_dt = con.execute(f"SELECT MAX(dt) FROM {train_sql}").fetchone()[0]
+        eval_min_dt = con.execute(f"SELECT MIN(dt) FROM {eval_sql}").fetchone()[0]
 
-    con.execute(
-        f"CREATE OR REPLACE TEMP VIEW v_train_sp AS "
-        f"SELECT DISTINCT store_id, product_id FROM {train_sql}"
-    )
-    con.execute(
-        f"CREATE OR REPLACE TEMP VIEW v_eval_sp AS "
-        f"SELECT DISTINCT store_id, product_id FROM {eval_sql}"
-    )
-
-    train_cnt = con.execute("SELECT COUNT(*) FROM v_train_sp").fetchone()[0]
-    eval_cnt = con.execute("SELECT COUNT(*) FROM v_eval_sp").fetchone()[0]
-    common_cnt = con.execute(
-        "SELECT COUNT(*) FROM ("
-        "SELECT * FROM v_train_sp INTERSECT SELECT * FROM v_eval_sp"
-        ")"
-    ).fetchone()[0]
-    eval_only = con.execute(
-        "SELECT COUNT(*) FROM (SELECT * FROM v_eval_sp EXCEPT SELECT * FROM v_train_sp)"
-    ).fetchone()[0]
-    train_only = con.execute(
-        "SELECT COUNT(*) FROM (SELECT * FROM v_train_sp EXCEPT SELECT * FROM v_eval_sp)"
-    ).fetchone()[0]
-
-    entity_consistent = (
-        train_cnt == eval_cnt == common_cnt and eval_only == 0 and train_only == 0
-    )
-    result.add_check(
-        ValidationCheck(
-            name="cross_partition_series_consistency",
-            status=(
-                ValidationStatus.PASS.value
-                if entity_consistent
-                else ValidationStatus.FAIL.value
-            ),
-            expected="100% series overlap between train and evaluation",
-            actual=(
-                f"Common: {common_cnt:,}, "
-                f"Train-only: {train_only}, "
-                f"Eval-only: {eval_only}"
-            ),
-            explanation=(
-                "Training and evaluation partitions contain identical "
-                "store-product series"
-            ),
-            counts={
-                "train_series": int(train_cnt),
-                "eval_series": int(eval_cnt),
-                "common_series": int(common_cnt),
-            },
+        temporal_order_ok = (
+            train_max_dt is not None
+            and eval_min_dt is not None
+            and str(train_max_dt) < str(eval_min_dt)
         )
+        result.add_check(
+            ValidationCheck(
+                name="temporal_partition_separation",
+                status=(
+                    ValidationStatus.PASS.value
+                    if temporal_order_ok
+                    else ValidationStatus.FAIL.value
+                ),
+                expected=(
+                    f"train_max_dt < eval_min_dt ({train_max_dt} < {eval_min_dt})"
+                ),
+                actual=f"train max: {train_max_dt}, eval min: {eval_min_dt}",
+                explanation=(
+                    "Training partition strictly precedes evaluation partition "
+                    "without temporal overlap"
+                ),
+            )
+        )
+
+    # Validate key columns for cross-partition consistency
+    keys_nested = any(
+        pa.types.is_nested(s.field(c).type)
+        for s in (train_schema, eval_schema)
+        for c in ("store_id", "product_id")
     )
+    if keys_nested:
+        result.add_check(
+            ValidationCheck(
+                name="cross_partition_series_consistency",
+                status=ValidationStatus.FAIL.value,
+                expected="Scalar store_id and product_id columns",
+                actual="Nested types in store_id or product_id",
+                explanation="Cannot verify series overlap on nested key columns",
+            )
+        )
+    else:
+        con.execute(
+            f"CREATE OR REPLACE TEMP VIEW v_train_sp AS "
+            f"SELECT DISTINCT store_id, product_id FROM {train_sql}"
+        )
+        con.execute(
+            f"CREATE OR REPLACE TEMP VIEW v_eval_sp AS "
+            f"SELECT DISTINCT store_id, product_id FROM {eval_sql}"
+        )
+
+        train_cnt = con.execute("SELECT COUNT(*) FROM v_train_sp").fetchone()[0]
+        eval_cnt = con.execute("SELECT COUNT(*) FROM v_eval_sp").fetchone()[0]
+        common_cnt = con.execute(
+            "SELECT COUNT(*) FROM ("
+            "SELECT * FROM v_train_sp INTERSECT SELECT * FROM v_eval_sp"
+            ")"
+        ).fetchone()[0]
+        eval_only = con.execute(
+            "SELECT COUNT(*) FROM ("
+            "SELECT * FROM v_eval_sp EXCEPT SELECT * FROM v_train_sp"
+            ")"
+        ).fetchone()[0]
+        train_only = con.execute(
+            "SELECT COUNT(*) FROM ("
+            "SELECT * FROM v_train_sp EXCEPT SELECT * FROM v_eval_sp"
+            ")"
+        ).fetchone()[0]
+
+        entity_consistent = (
+            train_cnt == eval_cnt == common_cnt and eval_only == 0 and train_only == 0
+        )
+        result.add_check(
+            ValidationCheck(
+                name="cross_partition_series_consistency",
+                status=(
+                    ValidationStatus.PASS.value
+                    if entity_consistent
+                    else ValidationStatus.FAIL.value
+                ),
+                expected="100% series overlap between train and evaluation",
+                actual=(
+                    f"Common: {common_cnt:,}, "
+                    f"Train-only: {train_only}, "
+                    f"Eval-only: {eval_only}"
+                ),
+                explanation=(
+                    "Training and evaluation partitions contain identical "
+                    "store-product series"
+                ),
+                counts={
+                    "train_series": int(train_cnt),
+                    "eval_series": int(eval_cnt),
+                    "common_series": int(common_cnt),
+                },
+            )
+        )
 
     return result
 
@@ -1569,6 +1861,10 @@ def calculate_evaluation_cohort(
         return fallback_cohort
 
     if "stock_hour6_22_cnt" not in schema.names:
+        return fallback_cohort
+
+    stock_cnt_f = schema.field("stock_hour6_22_cnt")
+    if not pa.types.is_integer(stock_cnt_f.type):
         return fallback_cohort
 
     eval_sql = f"read_parquet('{eval_path.as_posix()}')"
@@ -1661,9 +1957,8 @@ def run_validation_pipeline(
         for c in train_file_checks:
             train_result.add_check(c)
         train_result.metadata = train_meta
-        train_valid = train_meta is not None
 
-        if train_valid:
+        if train_meta is not None:
             for c in validate_schema(train_path, expected_schema):
                 train_result.add_check(c)
             for c in validate_general_integrity(con, train_path):
@@ -1703,9 +1998,8 @@ def run_validation_pipeline(
         for c in eval_file_checks:
             eval_result.add_check(c)
         eval_result.metadata = eval_meta
-        eval_valid = eval_meta is not None
 
-        if eval_valid:
+        if eval_meta is not None:
             for c in validate_schema(eval_path, expected_schema):
                 eval_result.add_check(c)
             for c in validate_general_integrity(con, eval_path):
@@ -1734,14 +2028,23 @@ def run_validation_pipeline(
 
         # 3. Cross-partition validation & Cohort evaluation
         logger.info("Performing cross-partition consistency checks")
+        train_is_healthy = (
+            train_meta is not None
+            and train_result.status != ValidationStatus.FAIL.value
+        )
+        eval_is_healthy = (
+            eval_meta is not None and eval_result.status != ValidationStatus.FAIL.value
+        )
         cross_result = validate_cross_partition_consistency(
             con,
             train_path,
             eval_path,
-            train_valid=train_valid,
-            eval_valid=eval_valid,
+            train_valid=train_is_healthy,
+            eval_valid=eval_is_healthy,
         )
-        cohort_diag = calculate_evaluation_cohort(con, eval_path, eval_valid=eval_valid)
+        cohort_diag = calculate_evaluation_cohort(
+            con, eval_path, eval_valid=(eval_meta is not None)
+        )
         eval_result.diagnostics["evaluation_cohort"] = cohort_diag
 
         # Determine overall pipeline status
@@ -1814,41 +2117,74 @@ def _generate_output_deliverables(
     train_meta = summary.get("train", {}).get("metadata")
     eval_meta = summary.get("eval", {}).get("metadata")
 
+    train_checks = summary.get("train", {}).get("checks", [])
+    disc_counts: dict[str, Any] = {}
+    for c in train_checks:
+        if c.get("name") == "discount_ceiling_anomaly":
+            disc_counts = c.get("counts", {})
+            break
+
+    tr_gt1 = disc_counts.get("discount_gt_1_count", 0)
+    tr_max_d = disc_counts.get("max_discount")
+    tr_diag = (
+        summary.get("train", {}).get("diagnostics", {}).get("stockout_diagnostics", {})
+    )
+    ev_diag = (
+        summary.get("eval", {}).get("diagnostics", {}).get("stockout_diagnostics", {})
+    )
+    tr_pos_pct = tr_diag.get("pct_positive_sale_stockout_hours", 0.0)
+    ev_pos_pct = ev_diag.get("pct_positive_sale_stockout_hours", 0.0)
+
+    known_limitations = [
+        (
+            "Sales values are globally normalized demand index values; "
+            "original physical unit counts cannot be reconstructed."
+        ),
+    ]
+    if tr_gt1 > 0:
+        known_limitations.append(
+            f"{tr_gt1} training records feature discount values > 1.0 "
+            f"(maximum {tr_max_d}), which is an observed anomaly "
+            "relative to the conventional discount range. Raw values "
+            "are preserved without clipping or correction."
+        )
+    else:
+        known_limitations.append(
+            "Values exceeding 1.0 in discount rate may occur as observed "
+            "anomalies relative to the conventional discount range."
+        )
+
+    if tr_pos_pct > 0 or ev_pos_pct > 0:
+        known_limitations.append(
+            f"Positive sales co-occur with stockout flags in approximately "
+            f"{tr_pos_pct:.2f}% of training stockout hours and "
+            f"{ev_pos_pct:.2f}% of evaluation stockout hours. Their "
+            "within-hour timing and cause are not established by this validation."
+        )
+    else:
+        known_limitations.append(
+            "Positive sales may co-occur with stockout flags within the same hour; "
+            "their within-hour timing and cause are not established by this validation."
+        )
+
+    known_limitations.append(
+        "The project's selected primary evaluation cohort uses "
+        "stock_hour6_22_cnt == 0 representing daytime stockout-free "
+        "series-days; daytime availability does not guarantee "
+        "24-hour stockout absence."
+    )
+
     manifest_data = {
         "dataset_name": "FreshRetailNet-50K",
         "provider": "Dingdong Inc.",
         "source_url": "https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K",
         "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
-        "inspection_date": summary["timestamp"],
         "files": {
             "train": train_meta,
             "eval": eval_meta,
         },
         "entity_counts": config.get("expected_entities", {}),
-        "known_limitations": [
-            (
-                "Sales values are globally normalized demand index values; "
-                "original physical unit counts cannot be reconstructed."
-            ),
-            (
-                "34 training records feature discount values > 1.0 "
-                "(max 1.088 for SKU 37), which is an observed anomaly "
-                "relative to the conventional discount range. Raw values "
-                "are preserved without clipping or correction."
-            ),
-            (
-                "Positive sales co-occur with stockout flags in approximately "
-                "2.87% of training stockout hours and 3.10% of evaluation "
-                "stockout hours. Their within-hour timing and cause are not "
-                "established by this validation."
-            ),
-            (
-                "The project's selected primary evaluation cohort uses "
-                "stock_hour6_22_cnt == 0 representing daytime stockout-free "
-                "series-days; daytime availability does not guarantee "
-                "24-hour stockout absence."
-            ),
-        ],
+        "known_limitations": known_limitations,
     }
     val_manifest_path.write_text(
         json.dumps(manifest_data, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
@@ -1953,11 +2289,9 @@ def _build_data_dictionary_md() -> str:
         ),
         (
             "| `discount` | `double` | Observed | Daily discount rate | "
-            "Promotional pricing factor (selling price / list price). "
-            "1.0 indicates full retail price; 0.9 represents a 10% discount. "
-            "34 records in training exceed 1.0 (up to 1.088), which is an observed "
-            "anomaly relative to the conventional discount range preserved "
-            "without clipping. |"
+            "Daily discount rate as a promotional factor (selling price / list price). "
+            "1.0 indicates full retail price; values below 1.0 represent discounts. "
+            "Values exceeding 1.0 may occur as observed anomalies. |"
         ),
         (
             "| `holiday_flag` | `int32` | Derived | Statutory holiday indicator | "
@@ -1996,16 +2330,15 @@ def _build_data_dictionary_md() -> str:
         ),
         (
             "2. **Stockout Semantics:** `hours_stock_status = 1` indicates unavailable "
-            "stock. Positive sales co-occur with stockout flags in ~2.87% of stockout "
-            "hours; their within-hour timing and cause are not established by this "
+            "stock. Positive sales may co-occur with stockout flags within the same "
+            "hour; their within-hour timing and cause are not established by this "
             "validation."
         ),
         (
             "3. **Evaluation Filter:** `stock_hour6_22_cnt == 0` designates the "
-            "project's selected primary evaluation cohort free of daytime stockouts "
-            "(206,562 rows / 59.02% of evaluation partition). It must not be "
-            "interpreted as guaranteeing zero stockouts across overnight non-trading "
-            "hours (22:00–06:00)."
+            "project's selected primary evaluation cohort free of daytime stockouts. "
+            "Daytime availability does not guarantee 24-hour stockout absence across "
+            "overnight non-trading hours (22:00–06:00)."
         ),
     ]
     return "\n".join(lines) + "\n"
@@ -2022,10 +2355,7 @@ def _chk_field(
 
 
 def _build_data_profile_md(summary: dict[str, Any]) -> str:
-    """Generate Markdown data profile report deriving all values dynamically."""
-    timestamp = summary["timestamp"]
-    overall_status = summary["overall_status"]
-
+    """Generate professional analytical data profile report from validation summary."""
     train = summary.get("train", {})
     eval_part = summary.get("eval", {})
     cross = summary.get("cross_partition", {})
@@ -2037,64 +2367,128 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
     train_diag = train.get("diagnostics", {}).get("stockout_diagnostics", {})
     eval_diag = eval_part.get("diagnostics", {}).get("stockout_diagnostics", {})
 
-    # Derive checks summary
-    all_checks = (
-        train.get("checks", []) + eval_part.get("checks", []) + cross.get("checks", [])
-    )
-    fail_checks = [c for c in all_checks if c.get("status") == "FAIL"]
-    warn_checks = [c for c in all_checks if c.get("status") == "WARNING"]
+    def get_chk(partition: dict[str, Any], name: str) -> dict[str, Any]:
+        for c in partition.get("checks", []):
+            if c.get("name") == name:
+                return c
+        return {}
 
-    if overall_status == "PASS":
-        status_note = (
-            "*(All automated validation checks passed successfully across "
-            "both partitions.)*"
-        )
-    elif overall_status == "WARNING":
-        warn_names = ", ".join(sorted(set(c["name"] for c in warn_checks)))
-        status_note = (
-            f"*(Validation completed with WARNING in checks: {warn_names}. "
-            "Documented anomalies preserved without artificial clipping. "
-            "Zero critical failures detected.)*"
-        )
-    else:
-        fail_names = ", ".join(sorted(set(c["name"] for c in fail_checks)))
-        status_note = (
-            f"*(Validation status is FAIL due to failures in checks: {fail_names}.)*"
+    def schema_partition_ok(partition: dict[str, Any]) -> bool:
+        missing_chk = get_chk(partition, "schema_missing_columns")
+        unexp_chk = get_chk(partition, "schema_unexpected_columns")
+        types_chk = get_chk(partition, "schema_data_types")
+        return (
+            missing_chk.get("status") == ValidationStatus.PASS.value
+            and unexp_chk.get("status") == ValidationStatus.PASS.value
+            and types_chk.get("status") == ValidationStatus.PASS.value
         )
 
-    # Derive reconciliation differences
-    train_rec = _chk_field(
-        train, "daily_hourly_sales_reconciliation", "counts", default={}
-    )
-    eval_rec = _chk_field(
-        eval_part, "daily_hourly_sales_reconciliation", "counts", default={}
-    )
-    train_max_diff = float(train_rec.get("max_diff", 0.0))
-    eval_max_diff = float(eval_rec.get("max_diff", 0.0))
-    overall_max_diff = max(train_max_diff, eval_max_diff)
+    def schema_discrepancy(partition: dict[str, Any]) -> str:
+        issues = []
+        for chk_name in (
+            "schema_missing_columns",
+            "schema_unexpected_columns",
+            "schema_data_types",
+        ):
+            c = get_chk(partition, chk_name)
+            if c.get("status") == ValidationStatus.FAIL.value:
+                issues.append(str(c.get("actual", "Discrepancy detected")))
+        return "; ".join(issues) if issues else "All column types verified"
 
-    train_mismatches = train_rec.get("mismatch_count", 0)
-    eval_mismatches = eval_rec.get("mismatch_count", 0)
-    total_mismatches = train_mismatches + eval_mismatches
+    schema_ok = schema_partition_ok(train) and schema_partition_ok(eval_part)
 
-    # Stockout count reconciliation
-    train_st_rec = _chk_field(
-        train, "stockout_count_reconciliation", "counts", default={}
+    tr_null_chk = get_chk(train, "missing_values_scalar")
+    ev_null_chk = get_chk(eval_part, "missing_values_scalar")
+    tr_null_cnt = tr_null_chk.get("counts", {}).get("scalar_null_count", 0)
+    ev_null_cnt = ev_null_chk.get("counts", {}).get("scalar_null_count", 0)
+
+    tr_fin_chk = get_chk(train, "non_finite_values")
+    ev_fin_chk = get_chk(eval_part, "non_finite_values")
+    tr_non_fin = tr_fin_chk.get("counts", {}).get("non_finite_count", 0)
+    ev_non_fin = ev_fin_chk.get("counts", {}).get("non_finite_count", 0)
+
+    tr_neg_chk = get_chk(train, "negative_sales")
+    ev_neg_chk = get_chk(eval_part, "negative_sales")
+    tr_neg_sales = tr_neg_chk.get("counts", {}).get("negative_sales_count", 0)
+    ev_neg_sales = ev_neg_chk.get("counts", {}).get("negative_sales_count", 0)
+
+    tr_dup_chk = get_chk(train, "natural_key_duplicates")
+    ev_dup_chk = get_chk(eval_part, "natural_key_duplicates")
+    tr_dup = tr_dup_chk.get("counts", {}).get("duplicate_groups_count", 0)
+    ev_dup = ev_dup_chk.get("counts", {}).get("duplicate_groups_count", 0)
+
+    tr_flags_ok = (
+        get_chk(train, "binary_flags_validity").get("status")
+        == ValidationStatus.PASS.value
     )
-    eval_st_rec = _chk_field(
-        eval_part, "stockout_count_reconciliation", "counts", default={}
-    )
-    train_st_mismatches = train_st_rec.get("mismatch_count", 0)
-    eval_st_mismatches = eval_st_rec.get("mismatch_count", 0)
-    total_st_mismatches = train_st_mismatches + eval_st_mismatches
-    max_st_diff = max(
-        float(train_st_rec.get("max_diff", 0.0)),
-        float(eval_st_rec.get("max_diff", 0.0)),
+    ev_flags_ok = (
+        get_chk(eval_part, "binary_flags_validity").get("status")
+        == ValidationStatus.PASS.value
     )
 
-    # Dimension values
+    temp_sep_chk = get_chk(cross, "temporal_partition_separation")
+    series_bal_ok = (
+        get_chk(train, "series_observation_balance").get("status")
+        == ValidationStatus.PASS.value
+        and get_chk(eval_part, "series_observation_balance").get("status")
+        == ValidationStatus.PASS.value
+    )
+    daily_bal_ok = (
+        get_chk(train, "daily_record_balance").get("status")
+        == ValidationStatus.PASS.value
+        and get_chk(eval_part, "daily_record_balance").get("status")
+        == ValidationStatus.PASS.value
+    )
+
+    tr_len_ok = (
+        get_chk(train, "hourly_array_lengths").get("status")
+        == ValidationStatus.PASS.value
+    )
+    ev_len_ok = (
+        get_chk(eval_part, "hourly_array_lengths").get("status")
+        == ValidationStatus.PASS.value
+    )
+
+    tr_sales_elem_ok = (
+        get_chk(train, "hourly_sales_validity").get("status")
+        == ValidationStatus.PASS.value
+    )
+    ev_sales_elem_ok = (
+        get_chk(eval_part, "hourly_sales_validity").get("status")
+        == ValidationStatus.PASS.value
+    )
+
+    tr_stock_elem_ok = (
+        get_chk(train, "hourly_stock_status_binary").get("status")
+        == ValidationStatus.PASS.value
+    )
+    ev_stock_elem_ok = (
+        get_chk(eval_part, "hourly_stock_status_binary").get("status")
+        == ValidationStatus.PASS.value
+    )
+
+    tr_rec = get_chk(train, "daily_hourly_sales_reconciliation").get("counts", {})
+    ev_rec = get_chk(eval_part, "daily_hourly_sales_reconciliation").get("counts", {})
+    tr_max_diff = float(tr_rec.get("max_diff", 0.0))
+    ev_max_diff = float(ev_rec.get("max_diff", 0.0))
+    overall_max_diff = max(tr_max_diff, ev_max_diff)
+    total_sales_mismatches = tr_rec.get("mismatch_count", 0) + ev_rec.get(
+        "mismatch_count", 0
+    )
+
+    tr_st_rec = get_chk(train, "stockout_count_reconciliation").get("counts", {})
+    ev_st_rec = get_chk(eval_part, "stockout_count_reconciliation").get("counts", {})
+    total_stock_mismatches = tr_st_rec.get("mismatch_count", 0) + ev_st_rec.get(
+        "mismatch_count", 0
+    )
+    max_stock_diff = max(
+        float(tr_st_rec.get("max_diff", 0.0)),
+        float(ev_st_rec.get("max_diff", 0.0)),
+    )
+
     tr_rows = train_meta.get("num_rows", 0)
     ev_rows = eval_meta.get("num_rows", 0)
+    total_rows = tr_rows + ev_rows
     tr_cols = train_meta.get("num_columns", 0)
     ev_cols = eval_meta.get("num_columns", 0)
     tr_groups = train_meta.get("num_row_groups", 0)
@@ -2103,17 +2497,25 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
     ev_days = eval_meta.get("num_days", 0)
     tr_series = train_meta.get("num_series", 0)
     ev_series = eval_meta.get("num_series", 0)
+    tr_stores = train_meta.get("num_stores", 0)
+    ev_stores = eval_meta.get("num_stores", 0)
+    tr_products = train_meta.get("num_products", 0)
+    ev_products = eval_meta.get("num_products", 0)
 
-    # Stockout diagnostics
-    tr_full_daytime = train_diag.get("daytime_full_stockout_rows", 0)
-    ev_full_daytime = eval_diag.get("daytime_full_stockout_rows", 0)
-    tr_full_daytime_pct = round(tr_full_daytime / tr_rows * 100, 2) if tr_rows else 0.0
-    ev_full_daytime_pct = round(ev_full_daytime / ev_rows * 100, 2) if ev_rows else 0.0
-
-    tr_full_24 = train_diag.get("full_day_stockout_rows", 0)
-    ev_full_24 = eval_diag.get("full_day_stockout_rows", 0)
-    tr_full_24_pct = round(tr_full_24 / tr_rows * 100, 2) if tr_rows else 0.0
-    ev_full_24_pct = round(ev_full_24 / ev_rows * 100, 2) if ev_rows else 0.0
+    tr_disc_chk = get_chk(train, "discount_ceiling_anomaly")
+    ev_disc_chk = get_chk(eval_part, "discount_ceiling_anomaly")
+    tr_gt1_count = tr_disc_chk.get("counts", {}).get("discount_gt_1_count", 0)
+    tr_max_disc = tr_disc_chk.get("counts", {}).get("max_discount", 1.0)
+    ev_gt1_count = ev_disc_chk.get("counts", {}).get("discount_gt_1_count", 0)
+    ev_max_disc = ev_disc_chk.get("counts", {}).get("max_discount", 1.0)
+    tr_disc_non_neg = (
+        get_chk(train, "discount_non_negative").get("status")
+        == ValidationStatus.PASS.value
+    )
+    ev_disc_non_neg = (
+        get_chk(eval_part, "discount_non_negative").get("status")
+        == ValidationStatus.PASS.value
+    )
 
     tr_st_hrs = train_diag.get("total_stockout_hours", 0)
     ev_st_hrs = eval_diag.get("total_stockout_hours", 0)
@@ -2124,272 +2526,389 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
     tr_pos_st_vol = train_diag.get("sales_volume_during_stockout", 0.0)
     ev_pos_st_vol = eval_diag.get("sales_volume_during_stockout", 0.0)
 
+    tr_daytime_no_st = train_diag.get("daytime_no_stockout_rows", 0)
+    ev_daytime_no_st = eval_diag.get("daytime_no_stockout_rows", 0)
+    tr_daytime_no_st_pct = train_diag.get("daytime_no_stockout_pct", 0.0)
+    ev_daytime_no_st_pct = eval_diag.get("daytime_no_stockout_pct", 0.0)
+
+    tr_daytime_full = train_diag.get("daytime_full_stockout_rows", 0)
+    ev_daytime_full = eval_diag.get("daytime_full_stockout_rows", 0)
+    tr_daytime_full_pct = round(tr_daytime_full / tr_rows * 100, 2) if tr_rows else 0.0
+    ev_daytime_full_pct = round(ev_daytime_full / ev_rows * 100, 2) if ev_rows else 0.0
+
+    tr_full_24 = train_diag.get("full_day_stockout_rows", 0)
+    ev_full_24 = eval_diag.get("full_day_stockout_rows", 0)
+    tr_full_24_pct = round(tr_full_24 / tr_rows * 100, 2) if tr_rows else 0.0
+    ev_full_24_pct = round(ev_full_24 / ev_rows * 100, 2) if ev_rows else 0.0
+
     lines = [
-        "# Aarohan: Dataset Profile & Validation Report",
-        "",
-        f"**Inspection Date:** `{timestamp}`",
-        f"**Overall Validation Status:** **`{overall_status}`**",
-        status_note,
-        "",
-        "---",
+        "# Aarohan: Dataset Profile and Validation Report",
         "",
         "## 1. Dataset Overview",
         "",
         (
-            "Aarohan utilizes the **FreshRetailNet-50K** retail demand dataset "
+            "Aarohan utilizes the FreshRetailNet-50K retail demand dataset "
             "published by Dingdong Inc. under CC BY 4.0. The dataset contains "
-            "daily observations across store-product series in perishable "
+            "daily panel observations across store-product series in perishable "
             "grocery retail, annotated with 24-hour stockout status flags and "
             "hourly sales distributions."
         ),
         "",
         "---",
         "",
-        "## 2. File Details",
+        "## 2. Dataset Coverage",
         "",
+        "### Partition File Specifications",
+        "",
+        "| Partition | File Path | File Size | SHA-256 Checksum |",
+        "| :--- | :--- | :--- | :--- |",
         (
-            "| Partition | Relative Path | File Size | SHA-256 Checksum | "
-            "Checksum Status |"
-        ),
-        "| :--- | :--- | :--- | :--- | :--- |",
-        (
-            f"| **Training** | `{train_meta.get('path', 'N/A')}` | "
+            f"| Training | `{train_meta.get('path', 'N/A')}` | "
             f"{train_meta.get('file_size_mb', 0)} MB "
             f"({train_meta.get('file_size_bytes', 0):,} B) | "
-            f"`{train_meta.get('sha256', 'N/A')}` | "
-            f"**{_chk_field(train, 'sha256_checksum', 'status')}** |"
+            f"`{train_meta.get('sha256', 'N/A')}` |"
         ),
         (
-            f"| **Evaluation** | `{eval_meta.get('path', 'N/A')}` | "
+            f"| Evaluation | `{eval_meta.get('path', 'N/A')}` | "
             f"{eval_meta.get('file_size_mb', 0)} MB "
             f"({eval_meta.get('file_size_bytes', 0):,} B) | "
-            f"`{eval_meta.get('sha256', 'N/A')}` | "
-            f"**{_chk_field(eval_part, 'sha256_checksum', 'status')}** |"
+            f"`{eval_meta.get('sha256', 'N/A')}` |"
         ),
         "",
-        "---",
+        "### Dataset Dimensions",
         "",
-        "## 3. Dataset Dimensions",
-        "",
-        ("| Dimension | Training Partition | Evaluation Partition | Combined Total |"),
+        "| Dimension | Training Partition | Evaluation Partition | Combined Total |",
         "| :--- | :--- | :--- | :--- |",
-        f"| **Row Count** | {tr_rows:,} | {ev_rows:,} | {tr_rows + ev_rows:,} |",
-        f"| **Column Count** | {tr_cols} | {ev_cols} | {max(tr_cols, ev_cols)} |",
+        f"| Row Count | {tr_rows:,} | {ev_rows:,} | {total_rows:,} |",
+        f"| Column Count | {tr_cols} | {ev_cols} | {max(tr_cols, ev_cols)} |",
+        (f"| Row Groups | {tr_groups:,} | {ev_groups:,} | {tr_groups + ev_groups:,} |"),
         (
-            f"| **Row Groups** | {tr_groups:,} | {ev_groups:,} | "
-            f"{tr_groups + ev_groups:,} |"
-        ),
-        (
-            f"| **Unique Dates** | {tr_days} days | {ev_days} days | "
+            f"| Unique Dates | {tr_days} days | {ev_days} days | "
             f"{tr_days + ev_days} continuous days |"
         ),
         (
-            f"| **Unique Series** | {tr_series:,} | {ev_series:,} | "
+            f"| Unique Series | {tr_series:,} | {ev_series:,} | "
             f"{max(tr_series, ev_series):,} series |"
         ),
-        "",
-        "---",
-        "",
-        "## 4. Column Summary",
-        "",
         (
-            "All 19 required columns were verified against expected logical "
-            "Arrow types:\n"
-            "- **Entity IDs:** `city_id` (int64), `store_id` (int64), "
-            "`management_group_id` (int64), `first_category_id` (int64), "
-            "`second_category_id` (int64), `third_category_id` (int64), "
-            "`product_id` (int64)\n"
-            "- **Temporal & Sales:** `dt` (string), `sale_amount` (double), "
-            "`hours_sale` (list<double>)\n"
-            "- **Stockout Indicators:** `stock_hour6_22_cnt` (int32), "
-            "`hours_stock_status` (list<int64>)\n"
-            "- **Covariates:** `discount` (double), `holiday_flag` (int32), "
-            "`activity_flag` (int32), `precpt` (double), "
-            "`avg_temperature` (double), `avg_humidity` (double), "
-            "`avg_wind_level` (double)"
+            f"| Unique Stores | {tr_stores:,} | {ev_stores:,} | "
+            f"{max(tr_stores, ev_stores):,} stores |"
+        ),
+        (
+            f"| Unique SKUs | {tr_products:,} | {ev_products:,} | "
+            f"{max(tr_products, ev_products):,} products |"
         ),
         "",
         "---",
         "",
-        "## 5. Date Coverage & Continuity",
+        "## 3. Data Structure",
         "",
-        (
-            f"* **Training Window:** `{train_meta.get('min_dt', 'N/A')}` to "
-            f"`{train_meta.get('max_dt', 'N/A')}` ({tr_days} days)."
-        ),
-        (
-            f"* **Evaluation Window:** `{eval_meta.get('min_dt', 'N/A')}` to "
-            f"`{eval_meta.get('max_dt', 'N/A')}` ({ev_days} days)."
-        ),
-        (
-            f"* **Temporal Ordering:** Training strictly ends "
-            f"(`{train_meta.get('max_dt', 'N/A')}`) before evaluation begins "
-            f"(`{eval_meta.get('min_dt', 'N/A')}`). Zero overlap."
-        ),
-        "",
-        "---",
-        "",
-        "## 6. Store-Product Structure",
-        "",
-        (
-            f"* **Unique Stores:** {train_meta.get('num_stores', 0)} stores in "
-            f"training, {eval_meta.get('num_stores', 0)} in evaluation."
-        ),
-        (
-            f"* **Unique SKUs:** {train_meta.get('num_products', 0)} products in "
-            f"training, {eval_meta.get('num_products', 0)} in evaluation."
-        ),
-        (
-            f"* **Store-Product Series:** {tr_series:,} in training, "
-            f"{ev_series:,} in evaluation."
-        ),
-        "",
-        "---",
-        "",
-        "## 7. Data Integrity Findings",
-        "",
-        (
-            f"* **Missing Values:** "
-            f"{_chk_field(train, 'missing_values_scalar', 'actual')} "
-            f"scalar nulls in training; "
-            f"{_chk_field(eval_part, 'missing_values_scalar', 'actual')} "
-            "in evaluation."
-        ),
-        (
-            f"* **Non-Finite Values:** "
-            f"{_chk_field(train, 'non_finite_values', 'actual')} in training; "
-            f"{_chk_field(eval_part, 'non_finite_values', 'actual')} in evaluation."
-        ),
-        (
-            f"* **Negative Sales:** "
-            f"{_chk_field(train, 'negative_sales', 'actual')} in training; "
-            f"{_chk_field(eval_part, 'negative_sales', 'actual')} in evaluation."
-        ),
-        (
-            f"* **Natural Key Duplicates:** "
-            f"{_chk_field(train, 'natural_key_duplicates', 'actual')} in training; "
-            f"{_chk_field(eval_part, 'natural_key_duplicates', 'actual')} "
-            "in evaluation."
-        ),
-        "",
-        "---",
-        "",
-        "## 8. Hourly Data Validation",
-        "",
-        "Nested 24-hour sequence arrays were validated in controlled batches:",
-        (
-            f"* **Array Lengths:** "
-            f"{_chk_field(train, 'hourly_array_lengths', 'actual')} (train); "
-            f"{_chk_field(eval_part, 'hourly_array_lengths', 'actual')} (eval)."
-        ),
-        (
-            f"* **Element Validity:** "
-            f"{_chk_field(train, 'hourly_sales_validity', 'actual')} (train); "
-            f"{_chk_field(eval_part, 'hourly_sales_validity', 'actual')} (eval)."
-        ),
-        (
-            f"* **Sales Reconciliation:** Invariant `sale_amount ≈ sum(hours_sale)` "
-            f"within tolerance `1e-5`.\n"
-            f"  * **Result:** **{total_mismatches} mismatches** across all records. "
-            f"Maximum discrepancy is within float rounding ({overall_max_diff:.2e})."
-        ),
-        (
-            f"* **Stockout Count Reconciliation:** Invariant "
-            f"`stock_hour6_22_cnt == sum(hours_stock_status[6:22])`.\n"
-            f"  * **Result:** **{total_st_mismatches} mismatches** across all "
-            f"records (max diff: {max_st_diff})."
-        ),
-        "",
-        "---",
-        "",
-        "## 9. Stockout Availability Diagnostics",
-        "",
-        (
-            f"* **Daytime No-Stockout Rows (`stock_hour6_22_cnt == 0`):\n"
-            f"  * Training: {train_diag.get('daytime_no_stockout_rows', 0):,} rows "
-            f"({train_diag.get('daytime_no_stockout_pct', 0.0)}%)\n"
-            f"  * Evaluation: {eval_diag.get('daytime_no_stockout_rows', 0):,} rows "
-            f"({eval_diag.get('daytime_no_stockout_pct', 0.0)}%)"
-        ),
-        (
-            f"* **Daytime Full-Stockout Rows (`stock_hour6_22_cnt == 16`):\n"
-            f"  * Training: {tr_full_daytime:,} rows ({tr_full_daytime_pct}%)\n"
-            f"  * Evaluation: {ev_full_daytime:,} rows ({ev_full_daytime_pct}%)"
-        ),
-        (
-            f"* **Full 24-Hour Stockout Rows (all 24 hours out of stock):\n"
-            f"  * Training: {tr_full_24:,} rows ({tr_full_24_pct}%)\n"
-            f"  * Evaluation: {ev_full_24:,} rows ({ev_full_24_pct}%)"
-        ),
-        (
-            f"* **Stockout Hours Total:** {tr_st_hrs:,} hours in training; "
-            f"{ev_st_hrs:,} hours in evaluation."
-        ),
-        (
-            "* **Positive Sales During Stockout Flags:**\n"
-            f"  * Training: Positive sales co-occur with stockout flags in "
-            f"**{tr_pos_st_pct}%** of stockout hours ({tr_pos_st_hrs:,} hours, "
-            f"volume: {tr_pos_st_vol:,.2f} normalized units).\n"
-            f"  * Evaluation: Positive sales co-occur with stockout flags in "
-            f"**{ev_pos_st_pct}%** of stockout hours ({ev_pos_st_hrs:,} hours, "
-            f"volume: {ev_pos_st_vol:,.2f} normalized units).\n"
-            "  * *Note:* Positive sales co-occurring with stockout flags are an "
-            "observed diagnostic. Their within-hour timing and cause are not "
-            "established by this validation."
-        ),
-        "",
-        "---",
-        "",
-        "## 10. Discount Anomalies",
-        "",
-        (
-            f"* **Training Partition:** "
-            f"{_chk_field(train, 'discount_ceiling_anomaly', 'actual')}.\n"
-            "  * Status: **WARNING** (34 records > 1.0; discount > 1.0 is an "
-            "observed anomaly relative to the conventional discount range. "
-            "Its cause is not established by this validation. Raw values are "
-            "preserved without clipping or correction)."
-        ),
-        (
-            f"* **Evaluation Partition:** "
-            f"{_chk_field(eval_part, 'discount_ceiling_anomaly', 'actual')}.\n"
-            "  * Status: **PASS** (Zero records exceeding 1.0)."
-        ),
-        "",
-        "---",
-        "",
-        "## 11. Evaluation Cohort Composition",
-        "",
-        (
-            "The project's selected primary evaluation cohort is defined by "
-            "`stock_hour6_22_cnt == 0`:\n"
-            f"* **Total Evaluation Rows:** {cohort.get('total_rows', 0):,}\n"
-            f"* **Daytime No-Stockout Cohort:** "
-            f"**{cohort.get('daytime_no_stockout_rows', 0):,} rows "
-            f"({cohort.get('pct_daytime_no_stockout', 0.0)}%)**\n"
-            f"* **Daytime Stockout-Affected Cohort:** "
-            f"{cohort.get('daytime_with_stockout_rows', 0):,} rows "
-            f"({cohort.get('pct_daytime_with_stockout', 0.0)}%)"
-        ),
-        "",
-        "---",
-        "",
-        "## 12. Warnings and Limitations",
-        "",
-        (
-            "1. **Normalized Demand Scale:** The dataset uses globally normalized "
-            "sales index values. Raw physical unit counts cannot be reconstructed.\n"
-            "2. **Daytime vs. 24-Hour Stockout:** The `stock_hour6_22_cnt == 0` cohort "
-            "represents daytime operating stockout freedom (06:00–22:00); it does not "
-            "guarantee 24-hour stockout absence.\n"
-            "3. **Discount > 1.0:** 34 records in training exhibit discount > 1.0 "
-            "(max 1.088); these raw observed values are preserved without clipping "
-            "or correction.\n"
-            "4. **Positive Sales Co-occurring with Stockout Flags:** Positive sales "
-            f"co-occur with stockout flags in ~{tr_pos_st_pct}% of training stockout "
-            f"hours and ~{ev_pos_st_pct}% of evaluation stockout hours. Their "
-            "within-hour timing and cause are not established by this validation."
-        ),
     ]
+
+    if schema_ok:
+        lines.extend(
+            [
+                (
+                    "All 19 required columns conform to expected logical Arrow "
+                    "types:\n"
+                    "- Entity Identifiers: `city_id` (int64), `store_id` (int64), "
+                    "`management_group_id` (int64), `first_category_id` (int64), "
+                    "`second_category_id` (int64), `third_category_id` (int64), "
+                    "`product_id` (int64)\n"
+                    "- Temporal and Sales: `dt` (string), `sale_amount` (double), "
+                    "`hours_sale` (list<double>)\n"
+                    "- Stockout Indicators: `stock_hour6_22_cnt` (int32), "
+                    "`hours_stock_status` (list<int64>)\n"
+                    "- Covariates: `discount` (double), `holiday_flag` (int32), "
+                    "`activity_flag` (int32), `precpt` (double), "
+                    "`avg_temperature` (double), `avg_humidity` (double), "
+                    "`avg_wind_level` (double)"
+                ),
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                (
+                    "Schema discrepancies were detected during column structure "
+                    "validation:\n"
+                    f"- Training partition: {schema_discrepancy(train)}\n"
+                    f"- Evaluation partition: {schema_discrepancy(eval_part)}"
+                ),
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 4. Data Completeness and Integrity",
+            "",
+            (
+                "No missing scalar values exist across all columns in either partition."
+                if tr_null_cnt == 0 and ev_null_cnt == 0
+                else (
+                    f"Scalar missing values detected: {tr_null_cnt} in training, "
+                    f"{ev_null_cnt} in evaluation."
+                )
+            ),
+            (
+                "All floating-point numerical values are finite across both "
+                "partitions (zero NaN or Infinity occurrences)."
+                if tr_non_fin == 0 and ev_non_fin == 0
+                else (
+                    f"Non-finite values detected: {tr_non_fin} in training, "
+                    f"{ev_non_fin} in evaluation."
+                )
+            ),
+            (
+                "No negative sales values exist in either partition."
+                if tr_neg_sales == 0 and ev_neg_sales == 0
+                else (
+                    f"Negative sales values detected: {tr_neg_sales} in training, "
+                    f"{ev_neg_sales} in evaluation."
+                )
+            ),
+            (
+                "Zero duplicate records exist on the primary natural key "
+                "`(store_id, product_id, dt)` across all observations in both "
+                "partitions."
+                if tr_dup == 0 and ev_dup == 0
+                else (
+                    f"Natural key duplicates detected: {tr_dup} in training, "
+                    f"{ev_dup} in evaluation."
+                )
+            ),
+            (
+                "Holiday and marketing activity indicators strictly conform to "
+                "binary values {0, 1}."
+                if tr_flags_ok and ev_flags_ok
+                else "Indicator flag validity discrepancies detected."
+            ),
+            "",
+            "---",
+            "",
+            "## 5. Temporal Coverage",
+            "",
+            (
+                f"- Training Window: `{train_meta.get('min_dt', 'N/A')}` to "
+                f"`{train_meta.get('max_dt', 'N/A')}` ({tr_days} calendar days)."
+            ),
+            (
+                f"- Evaluation Window: `{eval_meta.get('min_dt', 'N/A')}` to "
+                f"`{eval_meta.get('max_dt', 'N/A')}` ({ev_days} calendar days)."
+            ),
+            (
+                f"- Temporal Partition Ordering: The training partition strictly "
+                f"precedes the evaluation partition without temporal overlap "
+                f"(`{train_meta.get('max_dt', 'N/A')}` < "
+                f"`{eval_meta.get('min_dt', 'N/A')}`)."
+                if temp_sep_chk.get("status") == ValidationStatus.PASS.value
+                else (
+                    "- Temporal Partition Ordering: Temporal separation between "
+                    "partitions could not be established or exhibited overlap."
+                )
+            ),
+            (
+                "- Series Continuity and Balance: Every store-product series "
+                "contains an unbroken daily observation record without missing "
+                f"calendar dates ({tr_days} days in training, {ev_days} days in "
+                "evaluation). Daily record counts are exactly balanced at "
+                f"{tr_series:,} observations per day."
+                if series_bal_ok and daily_bal_ok
+                else (
+                    "- Series Continuity and Balance: Discrepancies were observed "
+                    "in series observation counts or daily balance."
+                )
+            ),
+            "",
+            "---",
+            "",
+            "## 6. Hourly Sales and Stock Availability",
+            "",
+            (
+                "- Nested Array Structure: Every record in both partitions contains "
+                "exactly 24 hourly observations for both sales and stock status "
+                "with non-null parent arrays."
+                if tr_len_ok and ev_len_ok
+                else (
+                    "- Nested Array Structure: Discrepancies detected in array "
+                    f"lengths or parent nulls (training: "
+                    f"{get_chk(train, 'hourly_array_lengths').get('actual')}, "
+                    f"evaluation: "
+                    f"{get_chk(eval_part, 'hourly_array_lengths').get('actual')})."
+                )
+            ),
+            (
+                "- Hourly Sales Elements: Hourly sales arrays contain exclusively "
+                "finite, non-negative numerical values with zero missing child "
+                "elements across all 24 hours."
+                if tr_sales_elem_ok and ev_sales_elem_ok
+                else (
+                    "- Hourly Sales Elements: Discrepancies detected in "
+                    "hourly sales values."
+                )
+            ),
+            (
+                "- Hourly Stockout Indicators: Hourly stockout flags are strictly "
+                "binary integers in {0, 1} across all hours in both partitions."
+                if tr_stock_elem_ok and ev_stock_elem_ok
+                else (
+                    "- Hourly Stockout Indicators: Non-binary or null stockout flags "
+                    "detected."
+                )
+            ),
+            (
+                "- Sales Reconciliation: Daily recorded sales reconcile with the "
+                "sum of hourly sales within floating-point tolerance (1e-5) across "
+                f"all records in both partitions (maximum absolute difference: "
+                f"{overall_max_diff:.2e})."
+                if total_sales_mismatches == 0
+                else (
+                    "- Sales Reconciliation: Discrepancies observed between recorded "
+                    f"daily sales and sum of hourly sales ({total_sales_mismatches} "
+                    f"mismatches, maximum difference: {overall_max_diff:.2e})."
+                )
+            ),
+            (
+                "- Daytime Stockout Count Reconciliation: Daytime stockout hour "
+                "counts (`stock_hour6_22_cnt`) reconcile exactly with the sum of "
+                "hourly stockout indicators between 06:00 and 22:00 "
+                "(`hours_stock_status[6:22]`) across all records in both partitions."
+                if total_stock_mismatches == 0
+                else (
+                    "- Daytime Stockout Count Reconciliation: Discrepancies observed "
+                    f"in daytime stockout hour counts ({total_stock_mismatches} "
+                    f"mismatches, maximum difference: {max_stock_diff})."
+                )
+            ),
+            "",
+            "### Stockout Availability Diagnostics",
+            "",
+            (
+                f"- Daytime Stockout-Free Series-Days (`stock_hour6_22_cnt == 0`): "
+                f"Training {tr_daytime_no_st:,} rows ({tr_daytime_no_st_pct}%), "
+                f"Evaluation {ev_daytime_no_st:,} rows ({ev_daytime_no_st_pct}%)."
+            ),
+            (
+                f"- Full Daytime Stockout Series-Days (`stock_hour6_22_cnt == 16`): "
+                f"Training {tr_daytime_full:,} rows ({tr_daytime_full_pct}%), "
+                f"Evaluation {ev_daytime_full:,} rows ({ev_daytime_full_pct}%)."
+            ),
+            (
+                f"- Full 24-Hour Stockout Series-Days: "
+                f"Training {tr_full_24:,} rows ({tr_full_24_pct}%), "
+                f"Evaluation {ev_full_24:,} rows ({ev_full_24_pct}%)."
+            ),
+            (
+                f"- Total Stockout Hours: "
+                f"Training {tr_st_hrs:,} hours, Evaluation {ev_st_hrs:,} hours."
+            ),
+            (
+                "- Positive Sales During Stockout Flags: "
+                f"Training {tr_pos_st_pct:.2f}% of stockout hours ({tr_pos_st_hrs:,} "
+                f"hours, volume: {tr_pos_st_vol:,.2f} normalized units); "
+                f"Evaluation {ev_pos_st_pct:.2f}% of stockout hours ({ev_pos_st_hrs:,} "
+                f"hours, volume: {ev_pos_st_vol:,.2f} normalized units). "
+                "Positive sales co-occurring with stockout flags are an observed "
+                "diagnostic. Their within-hour timing and cause are not established "
+                "by this validation."
+            ),
+            "",
+            "---",
+            "",
+            "## 7. Observed Data Anomalies",
+            "",
+            (
+                "- Non-Negative Discount Rates: Discount rates are non-negative "
+                "across all records in both partitions."
+                if tr_disc_non_neg and ev_disc_non_neg
+                else "- Negative discount rate values detected."
+            ),
+            (
+                f"- Training Partition Discount Ceiling: {tr_gt1_count} records "
+                f"feature discount values exceeding 1.0 (maximum observed discount: "
+                f"{tr_max_disc}). discount > 1.0 is an observed anomaly relative to "
+                "the conventional discount range. Its cause is not established by "
+                "this validation. Raw values are preserved without clipping or "
+                "correction."
+                if tr_gt1_count > 0
+                else (
+                    "- Training Partition Discount Ceiling: All discount values are "
+                    "within the conventional range (<= 1.0)."
+                )
+            ),
+            (
+                f"- Evaluation Partition Discount Ceiling: {ev_gt1_count} records "
+                f"feature discount values exceeding 1.0 (maximum observed discount: "
+                f"{ev_max_disc})."
+                if ev_gt1_count > 0
+                else (
+                    "- Evaluation Partition Discount Ceiling: All discount values "
+                    "conform to the conventional promotional range (<= 1.0)."
+                )
+            ),
+            "",
+            "---",
+            "",
+            "## 8. Evaluation Cohort",
+            "",
+            (
+                "The project's selected primary evaluation cohort is defined by "
+                "`stock_hour6_22_cnt == 0` (series-days free of daytime "
+                "stockouts):"
+            ),
+            f"- Total Evaluation Records: {cohort.get('total_rows', 0):,}",
+            (
+                "- Daytime Stockout-Free Cohort: "
+                f"{cohort.get('daytime_no_stockout_rows', 0):,} records "
+                f"({cohort.get('pct_daytime_no_stockout', 0.0)}%)"
+            ),
+            (
+                "- Daytime Stockout-Affected Cohort: "
+                f"{cohort.get('daytime_with_stockout_rows', 0):,} records "
+                f"({cohort.get('pct_daytime_with_stockout', 0.0)}%)"
+            ),
+            "",
+            "---",
+            "",
+            "## 9. Data Limitations and Modeling Considerations",
+            "",
+            (
+                "1. Demand Index Scale: Recorded sales values represent globally "
+                "normalized demand index figures rather than raw physical unit "
+                "quantities. Original physical unit sales cannot be reconstructed "
+                "from the public dataset. Demand forecasting and evaluation operate "
+                "in this normalized space."
+            ),
+            (
+                "2. Daytime Operating Scope: The primary evaluation cohort "
+                "(`stock_hour6_22_cnt == 0`) captures stockout absence across daytime "
+                "operating hours (06:00 through 22:00); daytime availability does not "
+                "imply complete stockout absence during overnight fulfillment and "
+                "restocking windows (22:00 through 06:00)."
+            ),
+            (
+                f"3. Discount Anomalies: {tr_gt1_count} training records feature "
+                f"discount values exceeding 1.0 (reaching {tr_max_disc}). Raw "
+                "observed values are preserved without clipping, truncation, or "
+                "synthetic adjustment."
+                if tr_gt1_count > 0
+                else (
+                    "3. Discount Anomalies: Discount values exceeding 1.0 may occur "
+                    "as observed anomalies relative to the conventional promotional "
+                    "range. Raw values are preserved without clipping or correction."
+                )
+            ),
+            (
+                f"4. Sales and Stockout Co-occurrence: Positive sales co-occur with "
+                f"stockout flags in approximately {tr_pos_st_pct:.2f}% of training "
+                f"stockout hours and {ev_pos_st_pct:.2f}% of evaluation stockout "
+                "hours. Their within-hour timing and cause are not established by "
+                "this validation."
+            ),
+        ]
+    )
 
     return "\n".join(lines) + "\n"

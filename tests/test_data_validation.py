@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +19,9 @@ import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+import yaml
 
+from aarohan.config import get_project_root
 from aarohan.data.dataset import ValidationStatus
 from aarohan.data.load import (
     check_file_exists,
@@ -822,3 +827,275 @@ def test_pipeline_malformed_hourly_arrays(tmp_path: Path):
         config=config, reports_dir=rep_dir, manifest_path=manifest_p
     )
     _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+# =========================================================================
+# Task 2: Hourly Parent-Null Separation Unit Tests
+# =========================================================================
+
+
+def test_hourly_parent_null_sales_only(tmp_path: Path):
+    """Test parent null separation when hours_sale parent is null only."""
+    p = tmp_path / "sales_parent_null.parquet"
+    data = make_synthetic_records(num_series=1, num_days=2)
+    data["hours_sale"][0] = None
+    write_parquet(p, data)
+
+    checks, _ = validate_hourly_data(p)
+    chk_map = {c.name: c for c in checks}
+
+    sales_chk = chk_map["hourly_sales_validity"]
+    assert sales_chk.status == ValidationStatus.FAIL.value
+    assert sales_chk.counts["null_parent_sales_rows"] == 1
+
+    stock_chk = chk_map["hourly_stock_status_binary"]
+    assert stock_chk.status == ValidationStatus.PASS.value
+    assert stock_chk.counts["null_parent_stock_rows"] == 0
+
+
+def test_hourly_parent_null_stock_only(tmp_path: Path):
+    """Test parent null separation when hours_stock_status parent is null only."""
+    p = tmp_path / "stock_parent_null.parquet"
+    data = make_synthetic_records(num_series=1, num_days=2)
+    data["hours_stock_status"][0] = None
+    write_parquet(p, data)
+
+    checks, _ = validate_hourly_data(p)
+    chk_map = {c.name: c for c in checks}
+
+    sales_chk = chk_map["hourly_sales_validity"]
+    assert sales_chk.status == ValidationStatus.PASS.value
+    assert sales_chk.counts["null_parent_sales_rows"] == 0
+
+    stock_chk = chk_map["hourly_stock_status_binary"]
+    assert stock_chk.status == ValidationStatus.FAIL.value
+    assert stock_chk.counts["null_parent_stock_rows"] == 1
+
+
+def test_hourly_parent_null_both_same_row(tmp_path: Path):
+    """Test parent null separation when both arrays are null on the same row."""
+    p = tmp_path / "both_parents_null_same_row.parquet"
+    data = make_synthetic_records(num_series=1, num_days=2)
+    data["hours_sale"][0] = None
+    data["hours_stock_status"][0] = None
+    write_parquet(p, data)
+
+    checks, _ = validate_hourly_data(p)
+    chk_map = {c.name: c for c in checks}
+
+    sales_chk = chk_map["hourly_sales_validity"]
+    stock_chk = chk_map["hourly_stock_status_binary"]
+    lens_chk = chk_map["hourly_array_lengths"]
+
+    assert sales_chk.status == ValidationStatus.FAIL.value
+    assert sales_chk.counts["null_parent_sales_rows"] == 1
+    assert stock_chk.status == ValidationStatus.FAIL.value
+    assert stock_chk.counts["null_parent_stock_rows"] == 1
+    assert lens_chk.counts["null_parent_rows"] == 1
+
+
+def test_hourly_parent_null_different_rows(tmp_path: Path):
+    """Test parent null separation with nulls in different columns."""
+    p = tmp_path / "different_rows_null.parquet"
+    data = make_synthetic_records(num_series=1, num_days=2)
+    data["hours_sale"][0] = None
+    data["hours_stock_status"][1] = None
+    write_parquet(p, data)
+
+    checks, _ = validate_hourly_data(p)
+    chk_map = {c.name: c for c in checks}
+
+    sales_chk = chk_map["hourly_sales_validity"]
+    stock_chk = chk_map["hourly_stock_status_binary"]
+    lens_chk = chk_map["hourly_array_lengths"]
+
+    assert sales_chk.status == ValidationStatus.FAIL.value
+    assert sales_chk.counts["null_parent_sales_rows"] == 1
+    assert stock_chk.status == ValidationStatus.FAIL.value
+    assert stock_chk.counts["null_parent_stock_rows"] == 1
+    assert lens_chk.counts["null_parent_rows"] == 2
+
+
+# =========================================================================
+# Task 6: Comprehensive Integration Tests (A, B, C, D, E)
+# =========================================================================
+
+
+def test_pipeline_integration_complete_success(tmp_path: Path):
+    """Test complete successful pipeline produces all deliverables meeting standards."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "PASS"
+
+    val_json_path = rep_dir / "tables" / "data_validation.json"
+    profile_path = rep_dir / "data_profile.md"
+    dict_path = get_project_root() / "docs" / "data_dictionary.md"
+
+    assert val_json_path.is_file()
+    assert profile_path.is_file()
+    assert manifest_p.is_file()
+    assert dict_path.is_file()
+
+    # Verify data_profile.md contains no PASS, FAIL, or execution timestamps
+    profile_text = profile_path.read_text(encoding="utf-8")
+    assert not re.search(r"\b(PASS|FAIL|WARNING)\b", profile_text)
+    assert not re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", profile_text)
+
+    # Verify dataset_manifest.json contains no inspection_date
+    manifest_data = json.loads(manifest_p.read_text(encoding="utf-8"))
+    assert "inspection_date" not in manifest_data
+
+
+def test_pipeline_integration_wrong_logical_types(tmp_path: Path):
+    """Test wrong logical types in sale_amount, dt, discount, and hours_sale."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    config["dataset_size"]["train"]["start_date"] = "2024-01-01"
+    config["dataset_size"]["train"]["end_date"] = "2024-01-02"
+    train_path = Path(config["raw_train_path"])
+
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    n = len(train_data["city_id"])
+    train_data["sale_amount"] = ["24.0"] * n
+    train_data["dt"] = [20240101] * n
+    train_data["discount"] = ["0.95"] * n
+    train_data["hours_sale"] = [["1.0"] * 24] * n
+
+    custom_schema = get_test_arrow_schema()
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("sale_amount"),
+        pa.field("sale_amount", pa.string()),
+    )
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("dt"), pa.field("dt", pa.int64())
+    )
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("discount"),
+        pa.field("discount", pa.string()),
+    )
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("hours_sale"),
+        pa.field("hours_sale", pa.list_(pa.string())),
+    )
+
+    write_parquet(train_path, train_data, schema=custom_schema)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "FAIL"
+
+    train_checks = {c["name"]: c for c in summary["train"]["checks"]}
+    assert train_checks["negative_sales"]["status"] == "FAIL"
+    assert "non-numeric" in train_checks["negative_sales"]["explanation"].lower()
+
+    assert train_checks["date_boundaries"]["status"] == "FAIL"
+    assert "non-string" in train_checks["date_boundaries"]["explanation"].lower()
+
+    assert train_checks["discount_non_negative"]["status"] == "FAIL"
+    assert "non-numeric" in train_checks["discount_non_negative"]["explanation"].lower()
+
+    assert train_checks["hourly_sales_validity"]["status"] == "FAIL"
+    assert "non-numeric" in train_checks["hourly_sales_validity"]["explanation"].lower()
+
+    assert train_checks["file_existence"]["status"] == "PASS"
+    assert train_checks["row_count"]["status"] == "PASS"
+    assert train_checks["column_count"]["status"] == "PASS"
+    assert train_checks["missing_values_scalar"]["status"] == "PASS"
+    assert train_checks["hourly_stock_status_binary"]["status"] == "PASS"
+
+
+def test_pipeline_integration_unaffected_train_missing_eval_valid(
+    tmp_path: Path,
+):
+    """When train is missing, eval partition must validate and produce results."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    Path(config["raw_train_path"]).unlink()
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "FAIL"
+    assert summary["train"]["status"] == "FAIL"
+    assert summary["eval"]["status"] == "PASS"
+    assert summary["cross_partition"]["status"] == "FAIL"
+
+
+def test_pipeline_integration_unaffected_eval_missing_train_valid(
+    tmp_path: Path,
+):
+    """When eval is missing, train partition must validate and produce results."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    Path(config["raw_eval_path"]).unlink()
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "FAIL"
+    assert summary["train"]["status"] == "PASS"
+    assert summary["eval"]["status"] == "FAIL"
+    assert summary["cross_partition"]["status"] == "FAIL"
+
+
+def test_cli_exit_codes(tmp_path: Path):
+    """Test CLI returns exit code 0 for healthy and 1 for failing dataset."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    cfg_file = tmp_path / "test_config.yaml"
+    cfg_file.write_text(yaml.dump(config), encoding="utf-8")
+    cli_script = get_project_root() / "scripts" / "inspect_data.py"
+
+    # Healthy dataset
+    ret_healthy = subprocess.run(
+        [
+            sys.executable,
+            str(cli_script),
+            "--config",
+            str(cfg_file),
+            "--reports-dir",
+            str(rep_dir),
+            "--manifest-path",
+            str(manifest_p),
+        ],
+        capture_output=True,
+    )
+    assert ret_healthy.returncode == 0
+
+    # Failing dataset (corrupt train)
+    Path(config["raw_train_path"]).write_bytes(b"NOT_A_PARQUET")
+    ret_failing = subprocess.run(
+        [
+            sys.executable,
+            str(cli_script),
+            "--config",
+            str(cfg_file),
+            "--reports-dir",
+            str(rep_dir),
+            "--manifest-path",
+            str(manifest_p),
+        ],
+        capture_output=True,
+    )
+    assert ret_failing.returncode == 1
+
+
+def test_report_correctness(tmp_path: Path):
+    """Test data_profile.md contains no badges and metrics match JSON."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+
+    profile_path = rep_dir / "data_profile.md"
+    val_json_path = rep_dir / "tables" / "data_validation.json"
+
+    profile_text = profile_path.read_text(encoding="utf-8")
+    assert not re.search(r"\b(PASS|FAIL|WARNING)\b", profile_text)
+    assert not re.search(r"\d+\s+(PASS|FAIL)", profile_text)
+
+    val_json = json.loads(val_json_path.read_text(encoding="utf-8"))
+    assert val_json["overall_status"] == summary["overall_status"]
+    train_rows = val_json["train"]["metadata"]["num_rows"]
+    assert f"{train_rows:,}" in profile_text
