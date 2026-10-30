@@ -1,5 +1,7 @@
 """Unit tests verifying project setup, package imports, configuration, and logging."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 
@@ -9,6 +11,40 @@ import yaml
 import aarohan
 from aarohan.config import get_project_root, load_config, load_yaml
 from aarohan.logging_config import get_logger, setup_logging
+
+
+@pytest.fixture(autouse=True)
+def isolate_logging_environment():
+    """Isolate logging state for every test, preserving pytest and external handlers.
+
+    Saves initial root logger level and external handlers before each test.
+    During teardown, safely removes and closes any Aarohan-managed handlers
+    created during test execution, and restores the original root level.
+    """
+    root_logger = logging.getLogger()
+    initial_level = root_logger.level
+    initial_handlers = [
+        h for h in root_logger.handlers if not getattr(h, "_aarohan_managed", False)
+    ]
+
+    yield root_logger
+
+    # Teardown: close and remove only Aarohan-managed handlers
+    for handler in list(root_logger.handlers):
+        if getattr(handler, "_aarohan_managed", False):
+            root_logger.removeHandler(handler)
+            try:
+                handler.close()
+            except Exception:
+                pass
+
+    # Ensure pre-existing external handlers remain attached
+    for handler in initial_handlers:
+        if handler not in root_logger.handlers:
+            root_logger.addHandler(handler)
+
+    # Restore initial root level
+    root_logger.setLevel(initial_level)
 
 
 def test_package_metadata():
@@ -124,5 +160,44 @@ def test_setup_logging_file_output(tmp_path: Path):
     assert "aarohan.test_file_output" in content
     assert "INFO" in content
 
-    # Clean up file handler by resetting to console logging only
-    setup_logging(level="INFO")
+
+def test_logging_isolation_leaves_no_residual_aarohan_handlers():
+    """Verify that setup_logging cleanup leaves no dangling Aarohan handlers."""
+    root_logger = logging.getLogger()
+    original_level = root_logger.level
+
+    setup_logging(level="DEBUG")
+    assert root_logger.level == logging.DEBUG
+    aarohan_handlers = [
+        h for h in root_logger.handlers if getattr(h, "_aarohan_managed", False)
+    ]
+    assert len(aarohan_handlers) >= 1
+
+    # Simulate teardown cleanup
+    for h in aarohan_handlers:
+        root_logger.removeHandler(h)
+        h.close()
+    root_logger.setLevel(original_level)
+
+    assert not any(getattr(h, "_aarohan_managed", False) for h in root_logger.handlers)
+    assert root_logger.level == original_level
+
+
+def test_readme_dataset_attribution_and_no_paper_citation():
+    """Verify README retains attribution and license without paper references."""
+    readme_path = get_project_root() / "README.md"
+    assert readme_path.is_file()
+    content = readme_path.read_text(encoding="utf-8")
+
+    # Required dataset attribution
+    assert "FreshRetailNet-50K" in content
+    assert "Dingdong Inc" in content
+    assert "https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K" in content
+    assert "CC BY 4.0" in content
+
+    # Excluded research paper citation and arXiv references
+    assert "arxiv.org" not in content.lower()
+    assert "2505.16319" not in content
+    assert "research paper" not in content.lower()
+    paper_title = "latent demand recovery and forecasting in fresh retail"
+    assert paper_title not in content.lower()

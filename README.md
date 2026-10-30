@@ -2,7 +2,7 @@
 
 Aarohan is an end-to-end demand-planning decision-support prototype designed for perishable grocery retail. It investigates how to estimate customer demand that may be obscured by stockouts, generate 7-day store-product forecasts, and translate predictions into illustrative replenishment recommendations.
 
-Aarohan is a research and decision-support prototype. It is not connected to a live retailer's automated ordering or enterprise resource planning (ERP) system.
+Aarohan is an end-to-end demand-planning decision-support prototype. It is not connected to a live retailer's automated ordering or enterprise resource planning (ERP) system.
 
 ---
 
@@ -32,8 +32,8 @@ The project investigates a connected five-stage workflow:
 
 Aarohan uses the **FreshRetailNet-50K** dataset published by Dingdong Inc.
 
-* **Dataset Repository:** [FreshRetailNet-50K on Hugging Face](https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K)
-* **Research Paper:** *FreshRetailNet-50K: A Stockout-Annotated Censored Demand Dataset for Latent Demand Recovery and Forecasting in Fresh Retail* ([arXiv:2505.16319](https://arxiv.org/abs/2505.16319))
+* **Dataset Source:** [FreshRetailNet-50K on Hugging Face](https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K)
+* **Data Provider:** Dingdong Inc.
 * **Dataset License:** Creative Commons Attribution 4.0 International ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/))
 * **Dataset Scope:** 4,850,000 daily observations across 50,000 store-product series, 898 stores, 865 perishable SKUs, and hourly stockout annotations.
 * **Scale and Units:** As documented by Dingdong Inc., sales quantities (`sale_amount` and `hours_sale`) are provided after global normalization by a proprietary scaling coefficient to protect commercial sales volumes. The original physical integer unit counts cannot be reconstructed from the dataset; all forecast outputs represent normalized demand index values.
