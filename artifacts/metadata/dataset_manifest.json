@@ -128,7 +128,7 @@
   },
   "known_limitations": [
     "Sales values are globally normalized demand index values; original physical unit counts cannot be reconstructed.",
-    "34 training records feature discount values > 1.0 (maximum 1.088), which is an observed anomaly relative to the conventional discount range. Raw values are preserved without clipping or correction.",
+    "34 training records feature discount values > 1.0 (maximum 1.088), which is an observed anomaly relative to the conventional discount range with an unknown cause. Raw values are preserved without clipping or correction.",
     "Positive sales co-occur with stockout flags in approximately 2.87% of training stockout hours and 3.10% of evaluation stockout hours. Their within-hour timing and cause are not established by this validation.",
     "The project's selected primary evaluation cohort uses stock_hour6_22_cnt == 0 representing daytime stockout-free series-days; daytime availability does not guarantee 24-hour stockout absence."
   ]

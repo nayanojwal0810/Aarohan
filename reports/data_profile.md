@@ -64,7 +64,7 @@ Holiday and marketing activity indicators strictly conform to binary values {0, 
 - Hourly Sales Elements: Hourly sales arrays contain exclusively finite, non-negative numerical values with zero missing child elements across all 24 hours.
 - Hourly Stockout Indicators: Hourly stockout flags are strictly binary integers in {0, 1} across all hours in both partitions.
 - Sales Reconciliation: Daily recorded sales reconcile with the sum of hourly sales within floating-point tolerance (1e-5) across all records in both partitions (maximum absolute difference: 7.11e-15).
-- Daytime Stockout Count Reconciliation: Daytime stockout hour counts (`stock_hour6_22_cnt`) reconcile exactly with the sum of hourly stockout indicators between 06:00 and 22:00 (`hours_stock_status[6:22]`) across all records in both partitions.
+- Daytime Stockout Count Reconciliation: Daytime stockout hour counts (`stock_hour6_22_cnt`) reconcile exactly with the sum of hourly stockout indicators across hours 06:00 through 21:00 inclusive (`hours_stock_status[6:22]`) across all records in both partitions.
 
 ### Stockout Availability Diagnostics
 
@@ -72,15 +72,15 @@ Holiday and marketing activity indicators strictly conform to binary values {0, 
 - Full Daytime Stockout Series-Days (`stock_hour6_22_cnt == 16`): Training 181,791 rows (4.04%), Evaluation 12,541 rows (3.58%).
 - Full 24-Hour Stockout Series-Days: Training 170,717 rows (3.79%), Evaluation 11,809 rows (3.37%).
 - Total Stockout Hours: Training 26,876,404 hours, Evaluation 1,913,065 hours.
-- Positive Sales During Stockout Flags: Training 2.87% of stockout hours (772,426 hours, volume: 112,931.35 normalized units); Evaluation 3.10% of stockout hours (59,300 hours, volume: 9,080.19 normalized units). Positive sales co-occurring with stockout flags are an observed diagnostic. Their within-hour timing and cause are not established by this validation.
+- Positive Sales During Stockout Flags: Training 2.87% of stockout hours (772,426 hours, volume: 112,931.35 normalized demand index values); Evaluation 3.10% of stockout hours (59,300 hours, volume: 9,080.19 normalized demand index values). Positive sales co-occurring with stockout flags are an observed diagnostic. Their within-hour timing and cause are not established by this validation.
 
 ---
 
 ## 7. Observed Data Anomalies
 
 - Non-Negative Discount Rates: Discount rates are non-negative across all records in both partitions.
-- Training Partition Discount Ceiling: 34 records feature discount values exceeding 1.0 (maximum observed discount: 1.088). discount > 1.0 is an observed anomaly relative to the conventional discount range. Its cause is not established by this validation. Raw values are preserved without clipping or correction.
-- Evaluation Partition Discount Ceiling: All discount values conform to the conventional promotional range (<= 1.0).
+- Training Partition Discount Ceiling: 34 records feature discount values exceeding 1.0 (maximum observed discount: 1.088). discount > 1.0 is an observed anomaly relative to the conventional discount range with an unknown cause. Raw values are preserved without clipping or correction.
+- Evaluation Partition Discount Ceiling: Discount ceiling check unavailable.
 
 ---
 
@@ -95,7 +95,7 @@ The project's selected primary evaluation cohort is defined by `stock_hour6_22_c
 
 ## 9. Data Limitations and Modeling Considerations
 
-1. Demand Index Scale: Recorded sales values represent globally normalized demand index figures rather than raw physical unit quantities. Original physical unit sales cannot be reconstructed from the public dataset. Demand forecasting and evaluation operate in this normalized space.
-2. Daytime Operating Scope: The primary evaluation cohort (`stock_hour6_22_cnt == 0`) captures stockout absence across daytime operating hours (06:00 through 22:00); daytime availability does not imply complete stockout absence during overnight fulfillment and restocking windows (22:00 through 06:00).
-3. Discount Anomalies: 34 training records feature discount values exceeding 1.0 (reaching 1.088). Raw observed values are preserved without clipping, truncation, or synthetic adjustment.
+1. Demand Index Scale: Recorded sales values represent globally normalized demand index figures rather than raw physical unit quantities. Original physical unit sales cannot be reconstructed from the public dataset. Demand forecasting and evaluation operate in this normalized space. Observed sales reflect censored transaction volume during periods of product availability; stockout status flags indicate product unavailability; and customer demand remains unobserved and latent when stockouts occur.
+2. Daytime Operating Scope: The primary evaluation cohort (`stock_hour6_22_cnt == 0`) captures stockout absence across daytime operating hours (06:00 through 21:00 inclusive); daytime availability does not imply complete stockout absence during overnight fulfillment and restocking windows (22:00 through 06:00).
+3. Discount Anomalies: 34 training records feature discount values exceeding 1.0 (reaching 1.088), which are observed anomalies with an unknown cause. Raw observed values are preserved without clipping, truncation, or synthetic adjustment.
 4. Sales and Stockout Co-occurrence: Positive sales co-occur with stockout flags in approximately 2.87% of training stockout hours and 3.10% of evaluation stockout hours. Their within-hour timing and cause are not established by this validation.

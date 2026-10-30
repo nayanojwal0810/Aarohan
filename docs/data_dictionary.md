@@ -34,4 +34,4 @@ This document details all 19 columns in the FreshRetailNet-50K dataset used by t
 
 1. **Normalized Scale:** `sale_amount` and `hours_sale` are globally normalized demand index values. Raw physical item counts cannot be reconstructed. Predictions represent normalized demand index values.
 2. **Stockout Semantics:** `hours_stock_status = 1` indicates unavailable stock. Positive sales may co-occur with stockout flags within the same hour; their within-hour timing and cause are not established by this validation.
-3. **Evaluation Filter:** `stock_hour6_22_cnt == 0` designates the project's selected primary evaluation cohort free of daytime stockouts. Daytime availability does not guarantee 24-hour stockout absence across overnight non-trading hours (22:00–06:00).
+3. **Evaluation Filter:** `stock_hour6_22_cnt == 0` designates the project's selected primary evaluation cohort free of daytime stockouts. Daytime availability does not guarantee 24-hour stockout absence across overnight non-trading hours (22:00 to 06:00).

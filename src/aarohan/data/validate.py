@@ -681,18 +681,63 @@ def validate_entity_and_time_series(
         )
         return checks
 
-    stats = con.execute(f"""
-        SELECT
-            MIN(dt) as min_dt,
-            MAX(dt) as max_dt,
-            COUNT(DISTINCT dt) as num_days,
-            COUNT(DISTINCT store_id) as num_stores,
-            COUNT(DISTINCT product_id) as num_products,
-            COUNT(DISTINCT store_id || '_' || product_id) as num_series
-        FROM {parquet_sql}
-    """).fetchone()
+    exp_stores = expected_entities.get("stores", 898)
+    exp_prods = expected_entities.get("products", 865)
+    exp_series = expected_size.get("series", 50000)
+    exp_start = expected_size.get("start_date")
+    exp_end = expected_size.get("end_date")
+    exp_days = expected_size.get("dates")
 
-    min_dt, max_dt, num_days, num_stores, num_products, num_series = stats
+    store_field = schema.field("store_id")
+    prod_field = schema.field("product_id")
+    dt_field = schema.field("dt")
+
+    is_store_valid = not pa.types.is_nested(store_field.type) and (
+        pa.types.is_integer(store_field.type)
+        or pa.types.is_string(store_field.type)
+        or pa.types.is_large_string(store_field.type)
+    )
+    is_prod_valid = not pa.types.is_nested(prod_field.type) and (
+        pa.types.is_integer(prod_field.type)
+        or pa.types.is_string(prod_field.type)
+        or pa.types.is_large_string(prod_field.type)
+    )
+    dt_type_valid = _is_string_or_date_type(dt_field.type)
+
+    min_dt = None
+    max_dt = None
+    num_days = None
+    num_stores = None
+    num_products = None
+    num_series = None
+
+    if is_store_valid and is_prod_valid and dt_type_valid:
+        try:
+            stats = con.execute(f"""
+                SELECT
+                    MIN(dt) as min_dt,
+                    MAX(dt) as max_dt,
+                    COUNT(DISTINCT dt) as num_days,
+                    COUNT(DISTINCT store_id) as num_stores,
+                    COUNT(DISTINCT product_id) as num_products,
+                    COUNT(DISTINCT store_id || '_' || product_id) as num_series
+                FROM {parquet_sql}
+            """).fetchone()
+            min_dt, max_dt, num_days, num_stores, num_products, num_series = stats
+        except Exception as exc:
+            logger.warning("Error running entity and time series query: %s", exc)
+    elif is_store_valid and is_prod_valid:
+        try:
+            stats = con.execute(f"""
+                SELECT
+                    COUNT(DISTINCT store_id) as num_stores,
+                    COUNT(DISTINCT product_id) as num_products,
+                    COUNT(DISTINCT store_id || '_' || product_id) as num_series
+                FROM {parquet_sql}
+            """).fetchone()
+            num_stores, num_products, num_series = stats
+        except Exception as exc:
+            logger.warning("Error running entity store/product query: %s", exc)
 
     if metadata is not None:
         metadata.min_dt = str(min_dt) if min_dt is not None else ""
@@ -702,56 +747,122 @@ def validate_entity_and_time_series(
         metadata.num_products = int(num_products) if num_products is not None else 0
         metadata.num_series = int(num_series) if num_series is not None else 0
 
-    exp_stores = expected_entities.get("stores", 898)
-    checks.append(
-        ValidationCheck(
-            name="unique_stores",
-            status=(
-                ValidationStatus.PASS.value
-                if num_stores == exp_stores
-                else ValidationStatus.FAIL.value
-            ),
-            expected=exp_stores,
-            actual=int(num_stores) if num_stores is not None else 0,
-            explanation=f"Unique store count: {num_stores}",
+    if is_store_valid:
+        if num_stores is not None:
+            checks.append(
+                ValidationCheck(
+                    name="unique_stores",
+                    status=(
+                        ValidationStatus.PASS.value
+                        if num_stores == exp_stores
+                        else ValidationStatus.FAIL.value
+                    ),
+                    expected=exp_stores,
+                    actual=int(num_stores),
+                    explanation=f"Unique store count: {num_stores}",
+                )
+            )
+        else:
+            checks.append(
+                ValidationCheck(
+                    name="unique_stores",
+                    status=ValidationStatus.FAIL.value,
+                    expected=exp_stores,
+                    actual="Query unavailable",
+                    explanation="Failed to query unique store count",
+                )
+            )
+    else:
+        checks.append(
+            ValidationCheck(
+                name="unique_stores",
+                status=ValidationStatus.FAIL.value,
+                expected=exp_stores,
+                actual=f"Invalid type: {store_field.type}",
+                explanation=(
+                    f"Cannot count unique stores: store_id has invalid type "
+                    f"({store_field.type})"
+                ),
+            )
         )
-    )
 
-    exp_prods = expected_entities.get("products", 865)
-    checks.append(
-        ValidationCheck(
-            name="unique_products",
-            status=(
-                ValidationStatus.PASS.value
-                if num_products == exp_prods
-                else ValidationStatus.FAIL.value
-            ),
-            expected=exp_prods,
-            actual=int(num_products) if num_products is not None else 0,
-            explanation=f"Unique product count: {num_products}",
+    if is_prod_valid:
+        if num_products is not None:
+            checks.append(
+                ValidationCheck(
+                    name="unique_products",
+                    status=(
+                        ValidationStatus.PASS.value
+                        if num_products == exp_prods
+                        else ValidationStatus.FAIL.value
+                    ),
+                    expected=exp_prods,
+                    actual=int(num_products),
+                    explanation=f"Unique product count: {num_products}",
+                )
+            )
+        else:
+            checks.append(
+                ValidationCheck(
+                    name="unique_products",
+                    status=ValidationStatus.FAIL.value,
+                    expected=exp_prods,
+                    actual="Query unavailable",
+                    explanation="Failed to query unique product count",
+                )
+            )
+    else:
+        checks.append(
+            ValidationCheck(
+                name="unique_products",
+                status=ValidationStatus.FAIL.value,
+                expected=exp_prods,
+                actual=f"Invalid type: {prod_field.type}",
+                explanation=(
+                    f"Cannot count unique products: product_id has invalid type "
+                    f"({prod_field.type})"
+                ),
+            )
         )
-    )
 
-    exp_series = expected_size.get("series", 50000)
-    checks.append(
-        ValidationCheck(
-            name="unique_series",
-            status=(
-                ValidationStatus.PASS.value
-                if num_series == exp_series
-                else ValidationStatus.FAIL.value
-            ),
-            expected=exp_series,
-            actual=int(num_series) if num_series is not None else 0,
-            explanation=f"Unique store-product series: {num_series:,}",
+    if is_store_valid and is_prod_valid:
+        if num_series is not None:
+            checks.append(
+                ValidationCheck(
+                    name="unique_series",
+                    status=(
+                        ValidationStatus.PASS.value
+                        if num_series == exp_series
+                        else ValidationStatus.FAIL.value
+                    ),
+                    expected=exp_series,
+                    actual=int(num_series),
+                    explanation=f"Unique store-product series: {num_series:,}",
+                )
+            )
+        else:
+            checks.append(
+                ValidationCheck(
+                    name="unique_series",
+                    status=ValidationStatus.FAIL.value,
+                    expected=exp_series,
+                    actual="Query unavailable",
+                    explanation="Failed to query unique series count",
+                )
+            )
+    else:
+        checks.append(
+            ValidationCheck(
+                name="unique_series",
+                status=ValidationStatus.FAIL.value,
+                expected=exp_series,
+                actual="Invalid key types",
+                explanation=(
+                    "Cannot count unique series: store_id or product_id has "
+                    "invalid type"
+                ),
+            )
         )
-    )
-
-    exp_start = expected_size.get("start_date")
-    exp_end = expected_size.get("end_date")
-    exp_days = expected_size.get("dates")
-    dt_type = schema.field("dt").type
-    dt_type_valid = _is_string_or_date_type(dt_type)
 
     if exp_start and exp_end:
         if not dt_type_valid:
@@ -760,11 +871,11 @@ def validate_entity_and_time_series(
                     name="date_boundaries",
                     status=ValidationStatus.FAIL.value,
                     expected=f"{exp_start} to {exp_end}",
-                    actual=f"Invalid dt column type: {dt_type}",
-                    explanation=("Cannot check date boundaries on non-string column"),
+                    actual=f"Invalid dt column type: {dt_field.type}",
+                    explanation="Cannot check date boundaries on non-string column",
                 )
             )
-        else:
+        elif min_dt is not None and max_dt is not None:
             date_bound_ok = (str(min_dt) == str(exp_start)) and (
                 str(max_dt) == str(exp_end)
             )
@@ -781,6 +892,16 @@ def validate_entity_and_time_series(
                     explanation=f"Date range span: {min_dt} to {max_dt}",
                 )
             )
+        else:
+            checks.append(
+                ValidationCheck(
+                    name="date_boundaries",
+                    status=ValidationStatus.FAIL.value,
+                    expected=f"{exp_start} to {exp_end}",
+                    actual="Query unavailable",
+                    explanation="Failed to query date boundaries",
+                )
+            )
 
     if exp_days is not None:
         if not dt_type_valid:
@@ -789,11 +910,11 @@ def validate_entity_and_time_series(
                     name="date_continuity",
                     status=ValidationStatus.FAIL.value,
                     expected=exp_days,
-                    actual=f"Invalid dt column type: {dt_type}",
-                    explanation=("Cannot check date continuity on non-string column"),
+                    actual=f"Invalid dt column type: {dt_field.type}",
+                    explanation="Cannot check date continuity on non-string column",
                 )
             )
-        else:
+        elif min_dt is not None and max_dt is not None and num_days is not None:
             try:
                 start_date = datetime.date.fromisoformat(str(min_dt))
                 end_date = datetime.date.fromisoformat(str(max_dt))
@@ -827,76 +948,140 @@ def validate_entity_and_time_series(
                         explanation=f"Failed to parse date range: {exc}",
                     )
                 )
+        else:
+            checks.append(
+                ValidationCheck(
+                    name="date_continuity",
+                    status=ValidationStatus.FAIL.value,
+                    expected=exp_days,
+                    actual="Query unavailable",
+                    explanation="Failed to query date continuity",
+                )
+            )
 
-    series_days_dist = con.execute(f"""
-        SELECT MIN(cnt), MAX(cnt)
-        FROM (
-            SELECT store_id, product_id, COUNT(*) as cnt
-            FROM {parquet_sql}
-            GROUP BY store_id, product_id
-        )
-    """).fetchone()
-    min_series_days, max_series_days = series_days_dist
+    if is_store_valid and is_prod_valid:
+        try:
+            series_days_dist = con.execute(f"""
+                SELECT MIN(cnt), MAX(cnt)
+                FROM (
+                    SELECT store_id, product_id, COUNT(*) as cnt
+                    FROM {parquet_sql}
+                    GROUP BY store_id, product_id
+                )
+            """).fetchone()
+            min_series_days, max_series_days = series_days_dist
 
-    balanced = (min_series_days == exp_days) and (max_series_days == exp_days)
-    checks.append(
-        ValidationCheck(
-            name="series_observation_balance",
-            status=(
-                ValidationStatus.PASS.value if balanced else ValidationStatus.FAIL.value
-            ),
-            expected=f"Exactly {exp_days} observations per series",
-            actual=f"Min: {min_series_days}, Max: {max_series_days}",
-            explanation=(
-                f"Series observation balance across {num_series:,} series: "
-                f"min={min_series_days}, max={max_series_days}"
-            ),
-            counts={
-                "min_days_per_series": (
-                    int(min_series_days) if min_series_days is not None else 0
+            balanced = (min_series_days == exp_days) and (max_series_days == exp_days)
+            checks.append(
+                ValidationCheck(
+                    name="series_observation_balance",
+                    status=(
+                        ValidationStatus.PASS.value
+                        if balanced
+                        else ValidationStatus.FAIL.value
+                    ),
+                    expected=f"Exactly {exp_days} observations per series",
+                    actual=f"Min: {min_series_days}, Max: {max_series_days}",
+                    explanation=(
+                        f"Series observation balance across "
+                        f"{num_series or 0:,} series: "
+                        f"min={min_series_days}, max={max_series_days}"
+                    ),
+                    counts={
+                        "min_days_per_series": (
+                            int(min_series_days) if min_series_days is not None else 0
+                        ),
+                        "max_days_per_series": (
+                            int(max_series_days) if max_series_days is not None else 0
+                        ),
+                    },
+                )
+            )
+        except Exception as exc:
+            checks.append(
+                ValidationCheck(
+                    name="series_observation_balance",
+                    status=ValidationStatus.FAIL.value,
+                    expected=f"Exactly {exp_days} observations per series",
+                    actual=f"Query error: {exc}",
+                    explanation="Failed to calculate series observation balance",
+                )
+            )
+    else:
+        checks.append(
+            ValidationCheck(
+                name="series_observation_balance",
+                status=ValidationStatus.FAIL.value,
+                expected=f"Exactly {exp_days} observations per series",
+                actual="Invalid key column types",
+                explanation=(
+                    "Cannot calculate series balance: store_id or product_id has "
+                    "invalid type"
                 ),
-                "max_days_per_series": (
-                    int(max_series_days) if max_series_days is not None else 0
-                ),
-            },
+            )
         )
-    )
 
-    daily_rows_dist = con.execute(f"""
-        SELECT MIN(cnt), MAX(cnt)
-        FROM (
-            SELECT dt, COUNT(*) as cnt
-            FROM {parquet_sql}
-            GROUP BY dt
-        )
-    """).fetchone()
-    min_daily_rows, max_daily_rows = daily_rows_dist
+    if dt_type_valid:
+        try:
+            daily_rows_dist = con.execute(f"""
+                SELECT MIN(cnt), MAX(cnt)
+                FROM (
+                    SELECT dt, COUNT(*) as cnt
+                    FROM {parquet_sql}
+                    GROUP BY dt
+                )
+            """).fetchone()
+            min_daily_rows, max_daily_rows = daily_rows_dist
 
-    daily_balanced = (min_daily_rows == exp_series) and (max_daily_rows == exp_series)
-    checks.append(
-        ValidationCheck(
-            name="daily_record_balance",
-            status=(
-                ValidationStatus.PASS.value
-                if daily_balanced
-                else ValidationStatus.FAIL.value
-            ),
-            expected=f"Exactly {exp_series} observations per calendar day",
-            actual=f"Min: {min_daily_rows}, Max: {max_daily_rows}",
-            explanation=(
-                f"Daily record counts across {num_days} days: "
-                f"min={min_daily_rows}, max={max_daily_rows}"
-            ),
-            counts={
-                "min_daily_records": (
-                    int(min_daily_rows) if min_daily_rows is not None else 0
+            daily_balanced = (min_daily_rows == exp_series) and (
+                max_daily_rows == exp_series
+            )
+            checks.append(
+                ValidationCheck(
+                    name="daily_record_balance",
+                    status=(
+                        ValidationStatus.PASS.value
+                        if daily_balanced
+                        else ValidationStatus.FAIL.value
+                    ),
+                    expected=f"Exactly {exp_series} observations per calendar day",
+                    actual=f"Min: {min_daily_rows}, Max: {max_daily_rows}",
+                    explanation=(
+                        f"Daily record counts across {num_days or 0} days: "
+                        f"min={min_daily_rows}, max={max_daily_rows}"
+                    ),
+                    counts={
+                        "min_daily_records": (
+                            int(min_daily_rows) if min_daily_rows is not None else 0
+                        ),
+                        "max_daily_records": (
+                            int(max_daily_rows) if max_daily_rows is not None else 0
+                        ),
+                    },
+                )
+            )
+        except Exception as exc:
+            checks.append(
+                ValidationCheck(
+                    name="daily_record_balance",
+                    status=ValidationStatus.FAIL.value,
+                    expected=f"Exactly {exp_series} observations per calendar day",
+                    actual=f"Query error: {exc}",
+                    explanation="Failed to calculate daily record balance",
+                )
+            )
+    else:
+        checks.append(
+            ValidationCheck(
+                name="daily_record_balance",
+                status=ValidationStatus.FAIL.value,
+                expected=f"Exactly {exp_series} observations per calendar day",
+                actual=f"Invalid dt column type: {dt_field.type}",
+                explanation=(
+                    "Cannot calculate daily record balance on non-string column"
                 ),
-                "max_daily_records": (
-                    int(max_daily_rows) if max_daily_rows is not None else 0
-                ),
-            },
+            )
         )
-    )
 
     return checks
 
@@ -1004,6 +1189,7 @@ def validate_hourly_data(
     full_day_stockout_rows = 0
 
     stockout_hours_total = 0
+    clean_stockout_hours_total = 0
     positive_sale_stockout_hours = 0
     sales_during_stockout_volume = 0.0
 
@@ -1259,12 +1445,17 @@ def validate_hourly_data(
                 stockout_mask = v_stock == 1
                 stockout_hours_total += int(stockout_mask.sum())
 
-                if sales_flat is not None and valid_sales_row is not None:
+                if (
+                    is_hours_sale_valid
+                    and sales_flat is not None
+                    and valid_sales_row is not None
+                ):
                     clean_mask = valid_sales_row & valid_stock_row
                     if clean_mask.any():
                         c_sales = sales_flat[clean_mask]
                         c_stock = stock_flat[clean_mask]
                         c_st_mask = c_stock == 1
+                        clean_stockout_hours_total += int(c_st_mask.sum())
                         pos_in_st = c_st_mask & (c_sales > 0)
                         positive_sale_stockout_hours += int(pos_in_st.sum())
                         sales_during_stockout_volume += float(c_sales[pos_in_st].sum())
@@ -1490,23 +1681,36 @@ def validate_hourly_data(
             )
         )
 
-    pct_pos_sales_stockout = (
-        (positive_sale_stockout_hours / stockout_hours_total * 100)
-        if stockout_hours_total > 0
-        else 0.0
-    )
+    if is_hours_sale_valid and is_hours_stock_valid:
+        cooccurrence_available = True
+        pct_pos_sales_stockout: float | None = (
+            round((positive_sale_stockout_hours / clean_stockout_hours_total * 100), 4)
+            if clean_stockout_hours_total > 0
+            else 0.0
+        )
+        pos_sale_st_hrs_val: int | None = positive_sale_stockout_hours
+        sales_vol_val: float | None = round(sales_during_stockout_volume, 3)
+    else:
+        cooccurrence_available = False
+        pct_pos_sales_stockout = None
+        pos_sale_st_hrs_val = None
+        sales_vol_val = None
+
     diagnostics["stockout_diagnostics"] = {
         "total_rows": total_rows,
         "daytime_no_stockout_rows": daytime_no_stockout_rows,
-        "daytime_no_stockout_pct": round(daytime_no_stockout_rows / total_rows * 100, 2)
-        if total_rows > 0
-        else 0.0,
+        "daytime_no_stockout_pct": (
+            round(daytime_no_stockout_rows / total_rows * 100, 2)
+            if total_rows > 0
+            else 0.0
+        ),
         "daytime_full_stockout_rows": daytime_full_stockout_rows,
         "full_day_stockout_rows": full_day_stockout_rows,
         "total_stockout_hours": stockout_hours_total,
-        "positive_sale_stockout_hours": positive_sale_stockout_hours,
-        "pct_positive_sale_stockout_hours": round(pct_pos_sales_stockout, 4),
-        "sales_volume_during_stockout": round(sales_during_stockout_volume, 3),
+        "cooccurrence_available": cooccurrence_available,
+        "positive_sale_stockout_hours": pos_sale_st_hrs_val,
+        "pct_positive_sale_stockout_hours": pct_pos_sales_stockout,
+        "sales_volume_during_stockout": sales_vol_val,
     }
 
     return checks, diagnostics
@@ -1779,61 +1983,100 @@ def validate_cross_partition_consistency(
             )
         )
     else:
-        con.execute(
-            f"CREATE OR REPLACE TEMP VIEW v_train_sp AS "
-            f"SELECT DISTINCT store_id, product_id FROM {train_sql}"
-        )
-        con.execute(
-            f"CREATE OR REPLACE TEMP VIEW v_eval_sp AS "
-            f"SELECT DISTINCT store_id, product_id FROM {eval_sql}"
-        )
+        train_store_t = train_schema.field("store_id").type
+        eval_store_t = eval_schema.field("store_id").type
+        train_prod_t = train_schema.field("product_id").type
+        eval_prod_t = eval_schema.field("product_id").type
 
-        train_cnt = con.execute("SELECT COUNT(*) FROM v_train_sp").fetchone()[0]
-        eval_cnt = con.execute("SELECT COUNT(*) FROM v_eval_sp").fetchone()[0]
-        common_cnt = con.execute(
-            "SELECT COUNT(*) FROM ("
-            "SELECT * FROM v_train_sp INTERSECT SELECT * FROM v_eval_sp"
-            ")"
-        ).fetchone()[0]
-        eval_only = con.execute(
-            "SELECT COUNT(*) FROM ("
-            "SELECT * FROM v_eval_sp EXCEPT SELECT * FROM v_train_sp"
-            ")"
-        ).fetchone()[0]
-        train_only = con.execute(
-            "SELECT COUNT(*) FROM ("
-            "SELECT * FROM v_train_sp EXCEPT SELECT * FROM v_eval_sp"
-            ")"
-        ).fetchone()[0]
-
-        entity_consistent = (
-            train_cnt == eval_cnt == common_cnt and eval_only == 0 and train_only == 0
-        )
-        result.add_check(
-            ValidationCheck(
-                name="cross_partition_series_consistency",
-                status=(
-                    ValidationStatus.PASS.value
-                    if entity_consistent
-                    else ValidationStatus.FAIL.value
-                ),
-                expected="100% series overlap between train and evaluation",
-                actual=(
-                    f"Common: {common_cnt:,}, "
-                    f"Train-only: {train_only}, "
-                    f"Eval-only: {eval_only}"
-                ),
-                explanation=(
-                    "Training and evaluation partitions contain identical "
-                    "store-product series"
-                ),
-                counts={
-                    "train_series": int(train_cnt),
-                    "eval_series": int(eval_cnt),
-                    "common_series": int(common_cnt),
-                },
+        if train_store_t != eval_store_t or train_prod_t != eval_prod_t:
+            result.add_check(
+                ValidationCheck(
+                    name="cross_partition_series_consistency",
+                    status=ValidationStatus.FAIL.value,
+                    expected=(
+                        "Compatible store_id and product_id types across partitions"
+                    ),
+                    actual=(
+                        f"store_id: ({train_store_t} vs {eval_store_t}), "
+                        f"product_id: ({train_prod_t} vs {eval_prod_t})"
+                    ),
+                    explanation=(
+                        "Cannot verify series overlap: store_id or product_id types "
+                        "are incompatible between training and evaluation partitions"
+                    ),
+                )
             )
-        )
+        else:
+            try:
+                con.execute(
+                    f"CREATE OR REPLACE TEMP VIEW v_train_sp AS "
+                    f"SELECT DISTINCT store_id, product_id FROM {train_sql}"
+                )
+                con.execute(
+                    f"CREATE OR REPLACE TEMP VIEW v_eval_sp AS "
+                    f"SELECT DISTINCT store_id, product_id FROM {eval_sql}"
+                )
+
+                train_cnt = con.execute("SELECT COUNT(*) FROM v_train_sp").fetchone()[0]
+                eval_cnt = con.execute("SELECT COUNT(*) FROM v_eval_sp").fetchone()[0]
+                common_cnt = con.execute(
+                    "SELECT COUNT(*) FROM ("
+                    "SELECT * FROM v_train_sp INTERSECT SELECT * FROM v_eval_sp"
+                    ")"
+                ).fetchone()[0]
+                eval_only = con.execute(
+                    "SELECT COUNT(*) FROM ("
+                    "SELECT * FROM v_eval_sp EXCEPT SELECT * FROM v_train_sp"
+                    ")"
+                ).fetchone()[0]
+                train_only = con.execute(
+                    "SELECT COUNT(*) FROM ("
+                    "SELECT * FROM v_train_sp EXCEPT SELECT * FROM v_eval_sp"
+                    ")"
+                ).fetchone()[0]
+
+                entity_consistent = (
+                    train_cnt == eval_cnt == common_cnt
+                    and eval_only == 0
+                    and train_only == 0
+                )
+                result.add_check(
+                    ValidationCheck(
+                        name="cross_partition_series_consistency",
+                        status=(
+                            ValidationStatus.PASS.value
+                            if entity_consistent
+                            else ValidationStatus.FAIL.value
+                        ),
+                        expected="100% series overlap between train and evaluation",
+                        actual=(
+                            f"Common: {common_cnt:,}, "
+                            f"Train-only: {train_only}, "
+                            f"Eval-only: {eval_only}"
+                        ),
+                        explanation=(
+                            "Training and evaluation partitions contain identical "
+                            "store-product series"
+                            if entity_consistent
+                            else "Mismatch in store-product series across partitions"
+                        ),
+                        counts={
+                            "train_series": int(train_cnt),
+                            "eval_series": int(eval_cnt),
+                            "common_series": int(common_cnt),
+                        },
+                    )
+                )
+            except Exception as exc:
+                result.add_check(
+                    ValidationCheck(
+                        name="cross_partition_series_consistency",
+                        status=ValidationStatus.FAIL.value,
+                        expected="100% series overlap between train and evaluation",
+                        actual=f"Query error: {exc}",
+                        explanation="Failed to execute cross-partition series query",
+                    )
+                )
 
     return result
 
@@ -2028,19 +2271,14 @@ def run_validation_pipeline(
 
         # 3. Cross-partition validation & Cohort evaluation
         logger.info("Performing cross-partition consistency checks")
-        train_is_healthy = (
-            train_meta is not None
-            and train_result.status != ValidationStatus.FAIL.value
-        )
-        eval_is_healthy = (
-            eval_meta is not None and eval_result.status != ValidationStatus.FAIL.value
-        )
+        train_is_readable = train_meta is not None
+        eval_is_readable = eval_meta is not None
         cross_result = validate_cross_partition_consistency(
             con,
             train_path,
             eval_path,
-            train_valid=train_is_healthy,
-            eval_valid=eval_is_healthy,
+            train_valid=train_is_readable,
+            eval_valid=eval_is_readable,
         )
         cohort_diag = calculate_evaluation_cohort(
             con, eval_path, eval_valid=(eval_meta is not None)
@@ -2132,8 +2370,8 @@ def _generate_output_deliverables(
     ev_diag = (
         summary.get("eval", {}).get("diagnostics", {}).get("stockout_diagnostics", {})
     )
-    tr_pos_pct = tr_diag.get("pct_positive_sale_stockout_hours", 0.0)
-    ev_pos_pct = ev_diag.get("pct_positive_sale_stockout_hours", 0.0)
+    tr_pos_pct = tr_diag.get("pct_positive_sale_stockout_hours")
+    ev_pos_pct = ev_diag.get("pct_positive_sale_stockout_hours")
 
     known_limitations = [
         (
@@ -2145,16 +2383,21 @@ def _generate_output_deliverables(
         known_limitations.append(
             f"{tr_gt1} training records feature discount values > 1.0 "
             f"(maximum {tr_max_d}), which is an observed anomaly "
-            "relative to the conventional discount range. Raw values "
-            "are preserved without clipping or correction."
+            "relative to the conventional discount range with an unknown cause. "
+            "Raw values are preserved without clipping or correction."
         )
     else:
         known_limitations.append(
             "Values exceeding 1.0 in discount rate may occur as observed "
-            "anomalies relative to the conventional discount range."
+            "anomalies relative to the conventional discount range with an "
+            "unknown cause."
         )
 
-    if tr_pos_pct > 0 or ev_pos_pct > 0:
+    if (
+        tr_pos_pct is not None
+        and ev_pos_pct is not None
+        and (tr_pos_pct > 0 or ev_pos_pct > 0)
+    ):
         known_limitations.append(
             f"Positive sales co-occur with stockout flags in approximately "
             f"{tr_pos_pct:.2f}% of training stockout hours and "
@@ -2174,6 +2417,46 @@ def _generate_output_deliverables(
         "24-hour stockout absence."
     )
 
+    measured_stores = (
+        train_meta.get("num_stores")
+        if isinstance(train_meta, dict)
+        else getattr(train_meta, "num_stores", None)
+    ) or (
+        eval_meta.get("num_stores")
+        if isinstance(eval_meta, dict)
+        else getattr(eval_meta, "num_stores", None)
+    )
+    measured_products = (
+        train_meta.get("num_products")
+        if isinstance(train_meta, dict)
+        else getattr(train_meta, "num_products", None)
+    ) or (
+        eval_meta.get("num_products")
+        if isinstance(eval_meta, dict)
+        else getattr(eval_meta, "num_products", None)
+    )
+    measured_series = (
+        train_meta.get("num_series")
+        if isinstance(train_meta, dict)
+        else getattr(train_meta, "num_series", None)
+    ) or (
+        eval_meta.get("num_series")
+        if isinstance(eval_meta, dict)
+        else getattr(eval_meta, "num_series", None)
+    )
+    if (
+        measured_stores is not None
+        and measured_products is not None
+        and measured_series is not None
+    ):
+        entity_counts = {
+            "stores": int(measured_stores),
+            "products": int(measured_products),
+            "store_product_series": int(measured_series),
+        }
+    else:
+        entity_counts = config.get("expected_entities", {})
+
     manifest_data = {
         "dataset_name": "FreshRetailNet-50K",
         "provider": "Dingdong Inc.",
@@ -2183,7 +2466,7 @@ def _generate_output_deliverables(
             "train": train_meta,
             "eval": eval_meta,
         },
-        "entity_counts": config.get("expected_entities", {}),
+        "entity_counts": entity_counts,
         "known_limitations": known_limitations,
     }
     val_manifest_path.write_text(
@@ -2338,7 +2621,7 @@ def _build_data_dictionary_md() -> str:
             "3. **Evaluation Filter:** `stock_hour6_22_cnt == 0` designates the "
             "project's selected primary evaluation cohort free of daytime stockouts. "
             "Daytime availability does not guarantee 24-hour stockout absence across "
-            "overnight non-trading hours (22:00–06:00)."
+            "overnight non-trading hours (22:00 to 06:00)."
         ),
     ]
     return "\n".join(lines) + "\n"
@@ -2399,31 +2682,51 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
 
     tr_null_chk = get_chk(train, "missing_values_scalar")
     ev_null_chk = get_chk(eval_part, "missing_values_scalar")
-    tr_null_cnt = tr_null_chk.get("counts", {}).get("scalar_null_count", 0)
-    ev_null_cnt = ev_null_chk.get("counts", {}).get("scalar_null_count", 0)
+    tr_null_cnt = (
+        tr_null_chk.get("counts", {}).get("null_count") if tr_null_chk else None
+    )
+    ev_null_cnt = (
+        ev_null_chk.get("counts", {}).get("null_count") if ev_null_chk else None
+    )
 
     tr_fin_chk = get_chk(train, "non_finite_values")
     ev_fin_chk = get_chk(eval_part, "non_finite_values")
-    tr_non_fin = tr_fin_chk.get("counts", {}).get("non_finite_count", 0)
-    ev_non_fin = ev_fin_chk.get("counts", {}).get("non_finite_count", 0)
+    tr_non_fin = (
+        tr_fin_chk.get("counts", {}).get("non_finite_count") if tr_fin_chk else None
+    )
+    ev_non_fin = (
+        ev_fin_chk.get("counts", {}).get("non_finite_count") if ev_fin_chk else None
+    )
 
     tr_neg_chk = get_chk(train, "negative_sales")
     ev_neg_chk = get_chk(eval_part, "negative_sales")
-    tr_neg_sales = tr_neg_chk.get("counts", {}).get("negative_sales_count", 0)
-    ev_neg_sales = ev_neg_chk.get("counts", {}).get("negative_sales_count", 0)
+    tr_neg_sales = (
+        tr_neg_chk.get("counts", {}).get("negative_sales_count") if tr_neg_chk else None
+    )
+    ev_neg_sales = (
+        ev_neg_chk.get("counts", {}).get("negative_sales_count") if ev_neg_chk else None
+    )
 
     tr_dup_chk = get_chk(train, "natural_key_duplicates")
     ev_dup_chk = get_chk(eval_part, "natural_key_duplicates")
-    tr_dup = tr_dup_chk.get("counts", {}).get("duplicate_groups_count", 0)
-    ev_dup = ev_dup_chk.get("counts", {}).get("duplicate_groups_count", 0)
+    tr_dup = (
+        tr_dup_chk.get("counts", {}).get("duplicate_groups") if tr_dup_chk else None
+    )
+    ev_dup = (
+        ev_dup_chk.get("counts", {}).get("duplicate_groups") if ev_dup_chk else None
+    )
 
+    tr_flags_chk = get_chk(train, "binary_flags_validity")
+    ev_flags_chk = get_chk(eval_part, "binary_flags_validity")
     tr_flags_ok = (
-        get_chk(train, "binary_flags_validity").get("status")
-        == ValidationStatus.PASS.value
+        tr_flags_chk.get("status") == ValidationStatus.PASS.value
+        if tr_flags_chk
+        else None
     )
     ev_flags_ok = (
-        get_chk(eval_part, "binary_flags_validity").get("status")
-        == ValidationStatus.PASS.value
+        ev_flags_chk.get("status") == ValidationStatus.PASS.value
+        if ev_flags_chk
+        else None
     )
 
     temp_sep_chk = get_chk(cross, "temporal_partition_separation")
@@ -2467,24 +2770,36 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
         == ValidationStatus.PASS.value
     )
 
-    tr_rec = get_chk(train, "daily_hourly_sales_reconciliation").get("counts", {})
-    ev_rec = get_chk(eval_part, "daily_hourly_sales_reconciliation").get("counts", {})
-    tr_max_diff = float(tr_rec.get("max_diff", 0.0))
-    ev_max_diff = float(ev_rec.get("max_diff", 0.0))
-    overall_max_diff = max(tr_max_diff, ev_max_diff)
-    total_sales_mismatches = tr_rec.get("mismatch_count", 0) + ev_rec.get(
-        "mismatch_count", 0
-    )
+    tr_rec = get_chk(train, "daily_hourly_sales_reconciliation").get("counts")
+    ev_rec = get_chk(eval_part, "daily_hourly_sales_reconciliation").get("counts")
+    if tr_rec is not None and ev_rec is not None:
+        tr_max_diff = float(tr_rec.get("max_diff", 0.0))
+        ev_max_diff = float(ev_rec.get("max_diff", 0.0))
+        overall_max_diff = max(tr_max_diff, ev_max_diff)
+        total_sales_mismatches = tr_rec.get("mismatch_count", 0) + ev_rec.get(
+            "mismatch_count", 0
+        )
+        sales_rec_available = True
+    else:
+        sales_rec_available = False
+        overall_max_diff = 0.0
+        total_sales_mismatches = 0
 
-    tr_st_rec = get_chk(train, "stockout_count_reconciliation").get("counts", {})
-    ev_st_rec = get_chk(eval_part, "stockout_count_reconciliation").get("counts", {})
-    total_stock_mismatches = tr_st_rec.get("mismatch_count", 0) + ev_st_rec.get(
-        "mismatch_count", 0
-    )
-    max_stock_diff = max(
-        float(tr_st_rec.get("max_diff", 0.0)),
-        float(ev_st_rec.get("max_diff", 0.0)),
-    )
+    tr_st_rec = get_chk(train, "stockout_count_reconciliation").get("counts")
+    ev_st_rec = get_chk(eval_part, "stockout_count_reconciliation").get("counts")
+    if tr_st_rec is not None and ev_st_rec is not None:
+        total_stock_mismatches = tr_st_rec.get("mismatch_count", 0) + ev_st_rec.get(
+            "mismatch_count", 0
+        )
+        max_stock_diff = max(
+            float(tr_st_rec.get("max_diff", 0.0)),
+            float(ev_st_rec.get("max_diff", 0.0)),
+        )
+        stock_rec_available = True
+    else:
+        stock_rec_available = False
+        total_stock_mismatches = 0
+        max_stock_diff = 0.0
 
     tr_rows = train_meta.get("num_rows", 0)
     ev_rows = eval_meta.get("num_rows", 0)
@@ -2504,27 +2819,43 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
 
     tr_disc_chk = get_chk(train, "discount_ceiling_anomaly")
     ev_disc_chk = get_chk(eval_part, "discount_ceiling_anomaly")
-    tr_gt1_count = tr_disc_chk.get("counts", {}).get("discount_gt_1_count", 0)
-    tr_max_disc = tr_disc_chk.get("counts", {}).get("max_discount", 1.0)
-    ev_gt1_count = ev_disc_chk.get("counts", {}).get("discount_gt_1_count", 0)
-    ev_max_disc = ev_disc_chk.get("counts", {}).get("max_discount", 1.0)
+    tr_gt1_count = (
+        tr_disc_chk.get("counts", {}).get("discount_gt_1_count")
+        if tr_disc_chk
+        else None
+    )
+    tr_max_disc = (
+        tr_disc_chk.get("counts", {}).get("max_discount") if tr_disc_chk else None
+    )
+    ev_gt1_count = (
+        ev_disc_chk.get("counts", {}).get("discount_gt_1_count")
+        if ev_disc_chk
+        else None
+    )
+    ev_max_disc = (
+        ev_disc_chk.get("counts", {}).get("max_discount") if ev_disc_chk else None
+    )
+    tr_disc_non_neg_chk = get_chk(train, "discount_non_negative")
+    ev_disc_non_neg_chk = get_chk(eval_part, "discount_non_negative")
     tr_disc_non_neg = (
-        get_chk(train, "discount_non_negative").get("status")
-        == ValidationStatus.PASS.value
+        tr_disc_non_neg_chk.get("status") == ValidationStatus.PASS.value
+        if tr_disc_non_neg_chk
+        else None
     )
     ev_disc_non_neg = (
-        get_chk(eval_part, "discount_non_negative").get("status")
-        == ValidationStatus.PASS.value
+        ev_disc_non_neg_chk.get("status") == ValidationStatus.PASS.value
+        if ev_disc_non_neg_chk
+        else None
     )
 
     tr_st_hrs = train_diag.get("total_stockout_hours", 0)
     ev_st_hrs = eval_diag.get("total_stockout_hours", 0)
-    tr_pos_st_hrs = train_diag.get("positive_sale_stockout_hours", 0)
-    ev_pos_st_hrs = eval_diag.get("positive_sale_stockout_hours", 0)
-    tr_pos_st_pct = train_diag.get("pct_positive_sale_stockout_hours", 0.0)
-    ev_pos_st_pct = eval_diag.get("pct_positive_sale_stockout_hours", 0.0)
-    tr_pos_st_vol = train_diag.get("sales_volume_during_stockout", 0.0)
-    ev_pos_st_vol = eval_diag.get("sales_volume_during_stockout", 0.0)
+    tr_pos_st_hrs = train_diag.get("positive_sale_stockout_hours")
+    ev_pos_st_hrs = eval_diag.get("positive_sale_stockout_hours")
+    tr_pos_st_pct = train_diag.get("pct_positive_sale_stockout_hours")
+    ev_pos_st_pct = eval_diag.get("pct_positive_sale_stockout_hours")
+    tr_pos_st_vol = train_diag.get("sales_volume_during_stockout")
+    ev_pos_st_vol = eval_diag.get("sales_volume_during_stockout")
 
     tr_daytime_no_st = train_diag.get("daytime_no_stockout_rows", 0)
     ev_daytime_no_st = eval_diag.get("daytime_no_stockout_rows", 0)
@@ -2638,6 +2969,280 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
             ]
         )
 
+    if tr_null_cnt is not None and ev_null_cnt is not None:
+        scalar_null_line = (
+            "No missing scalar values exist across all columns in either partition."
+            if tr_null_cnt == 0 and ev_null_cnt == 0
+            else (
+                f"Scalar missing values detected: {tr_null_cnt} in training, "
+                f"{ev_null_cnt} in evaluation."
+            )
+        )
+    elif tr_null_cnt is not None:
+        scalar_null_line = (
+            f"Scalar missing values: {tr_null_cnt} in training; evaluation unavailable."
+        )
+    elif ev_null_cnt is not None:
+        scalar_null_line = (
+            f"Scalar missing values: training unavailable; {ev_null_cnt} in evaluation."
+        )
+    else:
+        scalar_null_line = (
+            "Scalar missing values check unavailable (could not be calculated)."
+        )
+
+    if tr_non_fin is not None and ev_non_fin is not None:
+        non_fin_line = (
+            "All floating-point numerical values are finite across both "
+            "partitions (zero NaN or Infinity occurrences)."
+            if tr_non_fin == 0 and ev_non_fin == 0
+            else (
+                f"Non-finite values detected: {tr_non_fin} in training, "
+                f"{ev_non_fin} in evaluation."
+            )
+        )
+    elif tr_non_fin is not None:
+        non_fin_line = (
+            f"Non-finite values: {tr_non_fin} in training; evaluation unavailable."
+        )
+    elif ev_non_fin is not None:
+        non_fin_line = (
+            f"Non-finite values: training unavailable; {ev_non_fin} in evaluation."
+        )
+    else:
+        non_fin_line = "Non-finite values check unavailable (could not be calculated)."
+
+    if tr_neg_sales is not None and ev_neg_sales is not None:
+        neg_sales_line = (
+            "No negative sales values exist in either partition."
+            if tr_neg_sales == 0 and ev_neg_sales == 0
+            else (
+                f"Negative sales values detected: {tr_neg_sales} in training, "
+                f"{ev_neg_sales} in evaluation."
+            )
+        )
+    elif tr_neg_sales is not None:
+        neg_sales_line = (
+            f"Negative sales values: {tr_neg_sales} in training; "
+            "evaluation unavailable."
+        )
+    elif ev_neg_sales is not None:
+        neg_sales_line = (
+            f"Negative sales values: training unavailable; "
+            f"{ev_neg_sales} in evaluation."
+        )
+    else:
+        neg_sales_line = "Negative sales check unavailable (could not be calculated)."
+
+    if tr_dup is not None and ev_dup is not None:
+        dup_line = (
+            "Zero duplicate records exist on the primary natural key "
+            "`(store_id, product_id, dt)` across all observations in both "
+            "partitions."
+            if tr_dup == 0 and ev_dup == 0
+            else (
+                f"Natural key duplicates detected: {tr_dup} in training, "
+                f"{ev_dup} in evaluation."
+            )
+        )
+    elif tr_dup is not None:
+        dup_line = (
+            f"Natural key duplicates: {tr_dup} in training; evaluation unavailable."
+        )
+    elif ev_dup is not None:
+        dup_line = (
+            f"Natural key duplicates: training unavailable; {ev_dup} in evaluation."
+        )
+    else:
+        dup_line = "Natural key duplicate check unavailable (could not be calculated)."
+
+    if tr_flags_ok is True and ev_flags_ok is True:
+        flags_line = (
+            "Holiday and marketing activity indicators strictly conform to "
+            "binary values {0, 1}."
+        )
+    elif tr_flags_ok is None and ev_flags_ok is None:
+        flags_line = (
+            "Indicator flag validity check unavailable (could not be calculated)."
+        )
+    else:
+        flags_line = "Indicator flag validity discrepancies detected."
+
+    if sales_rec_available:
+        sales_rec_line = (
+            "- Sales Reconciliation: Daily recorded sales reconcile with the "
+            "sum of hourly sales within floating-point tolerance (1e-5) across "
+            f"all records in both partitions (maximum absolute difference: "
+            f"{overall_max_diff:.2e})."
+            if total_sales_mismatches == 0
+            else (
+                "- Sales Reconciliation: Discrepancies observed between recorded "
+                f"daily sales and sum of hourly sales ({total_sales_mismatches} "
+                f"mismatches, maximum difference: {overall_max_diff:.2e})."
+            )
+        )
+    else:
+        sales_rec_line = (
+            "- Sales Reconciliation: Sales reconciliation check unavailable."
+        )
+
+    if stock_rec_available:
+        stock_rec_line = (
+            "- Daytime Stockout Count Reconciliation: Daytime stockout hour "
+            "counts (`stock_hour6_22_cnt`) reconcile exactly with the sum of "
+            "hourly stockout indicators across hours 06:00 through 21:00 inclusive "
+            "(`hours_stock_status[6:22]`) across all records in both partitions."
+            if total_stock_mismatches == 0
+            else (
+                "- Daytime Stockout Count Reconciliation: Discrepancies observed "
+                f"in daytime stockout hour counts ({total_stock_mismatches} "
+                f"mismatches, maximum difference: {max_stock_diff})."
+            )
+        )
+    else:
+        stock_rec_line = (
+            "- Daytime Stockout Count Reconciliation: Daytime stockout count "
+            "reconciliation check unavailable."
+        )
+
+    if (
+        tr_pos_st_pct is not None
+        and ev_pos_st_pct is not None
+        and tr_pos_st_hrs is not None
+        and ev_pos_st_hrs is not None
+        and tr_pos_st_vol is not None
+        and ev_pos_st_vol is not None
+    ):
+        cooccur_line = (
+            "- Positive Sales During Stockout Flags: "
+            f"Training {tr_pos_st_pct:.2f}% of stockout hours ({tr_pos_st_hrs:,} "
+            f"hours, volume: {tr_pos_st_vol:,.2f} normalized demand index values); "
+            f"Evaluation {ev_pos_st_pct:.2f}% of stockout hours ({ev_pos_st_hrs:,} "
+            f"hours, volume: {ev_pos_st_vol:,.2f} normalized demand index values). "
+            "Positive sales co-occurring with stockout flags are an observed "
+            "diagnostic. Their within-hour timing and cause are not established "
+            "by this validation."
+        )
+    else:
+        cooccur_line = (
+            "- Positive Sales During Stockout Flags: Diagnostic unavailable. "
+            "Positive sales and stockout co-occurrence requires valid information "
+            "from both hourly sales and hourly stockout arrays."
+        )
+
+    if tr_disc_non_neg is True and ev_disc_non_neg is True:
+        disc_non_neg_line = (
+            "- Non-Negative Discount Rates: Discount rates are non-negative "
+            "across all records in both partitions."
+        )
+    elif tr_disc_non_neg is None and ev_disc_non_neg is None:
+        disc_non_neg_line = (
+            "- Non-Negative Discount Rates: Discount non-negative check unavailable."
+        )
+    else:
+        disc_non_neg_line = "- Negative discount rate values detected."
+
+    if tr_gt1_count is not None:
+        tr_gt1_line = (
+            f"- Training Partition Discount Ceiling: {tr_gt1_count} records "
+            f"feature discount values exceeding 1.0 (maximum observed discount: "
+            f"{tr_max_disc}). discount > 1.0 is an observed anomaly relative to "
+            "the conventional discount range with an unknown cause. Raw values "
+            "are preserved without clipping or correction."
+            if tr_gt1_count > 0
+            else (
+                "- Training Partition Discount Ceiling: All discount values are "
+                "within the conventional range (<= 1.0)."
+            )
+        )
+    else:
+        tr_gt1_line = (
+            "- Training Partition Discount Ceiling: Discount ceiling check unavailable."
+        )
+
+    if ev_gt1_count is not None:
+        ev_gt1_line = (
+            f"- Evaluation Partition Discount Ceiling: {ev_gt1_count} records "
+            f"feature discount values exceeding 1.0 (maximum observed discount: "
+            f"{ev_max_disc})."
+            if ev_gt1_count > 0
+            else (
+                "- Evaluation Partition Discount Ceiling: All discount values "
+                "conform to the conventional promotional range (<= 1.0)."
+            )
+        )
+    else:
+        ev_gt1_line = (
+            "- Evaluation Partition Discount Ceiling: Discount ceiling check "
+            "unavailable."
+        )
+
+    if cohort.get("total_rows", 0) > 0:
+        cohort_lines = [
+            f"- Total Evaluation Records: {cohort.get('total_rows', 0):,}",
+            (
+                "- Daytime Stockout-Free Cohort: "
+                f"{cohort.get('daytime_no_stockout_rows', 0):,} records "
+                f"({cohort.get('pct_daytime_no_stockout', 0.0)}%)"
+            ),
+            (
+                "- Daytime Stockout-Affected Cohort: "
+                f"{cohort.get('daytime_with_stockout_rows', 0):,} records "
+                f"({cohort.get('pct_daytime_with_stockout', 0.0)}%)"
+            ),
+        ]
+    else:
+        cohort_lines = [
+            "- Primary Evaluation Cohort: Evaluation cohort calculation unavailable."
+        ]
+
+    item1_line = (
+        "1. Demand Index Scale: Recorded sales values represent globally "
+        "normalized demand index figures rather than raw physical unit "
+        "quantities. Original physical unit sales cannot be reconstructed "
+        "from the public dataset. Demand forecasting and evaluation operate "
+        "in this normalized space. Observed sales reflect censored transaction "
+        "volume during periods of product availability; stockout status flags "
+        "indicate product unavailability; and customer demand remains unobserved "
+        "and latent when stockouts occur."
+    )
+    item2_line = (
+        "2. Daytime Operating Scope: The primary evaluation cohort "
+        "(`stock_hour6_22_cnt == 0`) captures stockout absence across daytime "
+        "operating hours (06:00 through 21:00 inclusive); daytime availability "
+        "does not imply complete stockout absence during overnight fulfillment "
+        "and restocking windows (22:00 through 06:00)."
+    )
+    if tr_gt1_count is not None and tr_gt1_count > 0:
+        item3_line = (
+            f"3. Discount Anomalies: {tr_gt1_count} training records feature "
+            f"discount values exceeding 1.0 (reaching {tr_max_disc}), which are "
+            "observed anomalies with an unknown cause. Raw observed values are "
+            "preserved without clipping, truncation, or synthetic adjustment."
+        )
+    else:
+        item3_line = (
+            "3. Discount Anomalies: Discount values exceeding 1.0 may occur "
+            "as observed anomalies relative to the conventional promotional "
+            "range with an unknown cause. Raw values are preserved without "
+            "clipping or correction."
+        )
+    if tr_pos_st_pct is not None and ev_pos_st_pct is not None:
+        item4_line = (
+            f"4. Sales and Stockout Co-occurrence: Positive sales co-occur with "
+            f"stockout flags in approximately {tr_pos_st_pct:.2f}% of training "
+            f"stockout hours and {ev_pos_st_pct:.2f}% of evaluation stockout "
+            "hours. Their within-hour timing and cause are not established by "
+            "this validation."
+        )
+    else:
+        item4_line = (
+            "4. Sales and Stockout Co-occurrence: Co-occurrence diagnostic was "
+            "unavailable for one or both partitions. Positive sales and stockout "
+            "co-occurrence assessment requires complete, valid arrays in both "
+            "sales and stockout status."
+        )
+
     lines.extend(
         [
             "",
@@ -2645,47 +3250,11 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
             "",
             "## 4. Data Completeness and Integrity",
             "",
-            (
-                "No missing scalar values exist across all columns in either partition."
-                if tr_null_cnt == 0 and ev_null_cnt == 0
-                else (
-                    f"Scalar missing values detected: {tr_null_cnt} in training, "
-                    f"{ev_null_cnt} in evaluation."
-                )
-            ),
-            (
-                "All floating-point numerical values are finite across both "
-                "partitions (zero NaN or Infinity occurrences)."
-                if tr_non_fin == 0 and ev_non_fin == 0
-                else (
-                    f"Non-finite values detected: {tr_non_fin} in training, "
-                    f"{ev_non_fin} in evaluation."
-                )
-            ),
-            (
-                "No negative sales values exist in either partition."
-                if tr_neg_sales == 0 and ev_neg_sales == 0
-                else (
-                    f"Negative sales values detected: {tr_neg_sales} in training, "
-                    f"{ev_neg_sales} in evaluation."
-                )
-            ),
-            (
-                "Zero duplicate records exist on the primary natural key "
-                "`(store_id, product_id, dt)` across all observations in both "
-                "partitions."
-                if tr_dup == 0 and ev_dup == 0
-                else (
-                    f"Natural key duplicates detected: {tr_dup} in training, "
-                    f"{ev_dup} in evaluation."
-                )
-            ),
-            (
-                "Holiday and marketing activity indicators strictly conform to "
-                "binary values {0, 1}."
-                if tr_flags_ok and ev_flags_ok
-                else "Indicator flag validity discrepancies detected."
-            ),
+            scalar_null_line,
+            non_fin_line,
+            neg_sales_line,
+            dup_line,
+            flags_line,
             "",
             "---",
             "",
@@ -2700,8 +3269,8 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
                 f"`{eval_meta.get('max_dt', 'N/A')}` ({ev_days} calendar days)."
             ),
             (
-                f"- Temporal Partition Ordering: The training partition strictly "
-                f"precedes the evaluation partition without temporal overlap "
+                "- Temporal Partition Ordering: The training partition strictly "
+                "precedes the evaluation partition without temporal overlap "
                 f"(`{train_meta.get('max_dt', 'N/A')}` < "
                 f"`{eval_meta.get('min_dt', 'N/A')}`)."
                 if temp_sep_chk.get("status") == ValidationStatus.PASS.value
@@ -2759,30 +3328,8 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
                     "detected."
                 )
             ),
-            (
-                "- Sales Reconciliation: Daily recorded sales reconcile with the "
-                "sum of hourly sales within floating-point tolerance (1e-5) across "
-                f"all records in both partitions (maximum absolute difference: "
-                f"{overall_max_diff:.2e})."
-                if total_sales_mismatches == 0
-                else (
-                    "- Sales Reconciliation: Discrepancies observed between recorded "
-                    f"daily sales and sum of hourly sales ({total_sales_mismatches} "
-                    f"mismatches, maximum difference: {overall_max_diff:.2e})."
-                )
-            ),
-            (
-                "- Daytime Stockout Count Reconciliation: Daytime stockout hour "
-                "counts (`stock_hour6_22_cnt`) reconcile exactly with the sum of "
-                "hourly stockout indicators between 06:00 and 22:00 "
-                "(`hours_stock_status[6:22]`) across all records in both partitions."
-                if total_stock_mismatches == 0
-                else (
-                    "- Daytime Stockout Count Reconciliation: Discrepancies observed "
-                    f"in daytime stockout hour counts ({total_stock_mismatches} "
-                    f"mismatches, maximum difference: {max_stock_diff})."
-                )
-            ),
+            sales_rec_line,
+            stock_rec_line,
             "",
             "### Stockout Availability Diagnostics",
             "",
@@ -2805,50 +3352,15 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
                 f"- Total Stockout Hours: "
                 f"Training {tr_st_hrs:,} hours, Evaluation {ev_st_hrs:,} hours."
             ),
-            (
-                "- Positive Sales During Stockout Flags: "
-                f"Training {tr_pos_st_pct:.2f}% of stockout hours ({tr_pos_st_hrs:,} "
-                f"hours, volume: {tr_pos_st_vol:,.2f} normalized units); "
-                f"Evaluation {ev_pos_st_pct:.2f}% of stockout hours ({ev_pos_st_hrs:,} "
-                f"hours, volume: {ev_pos_st_vol:,.2f} normalized units). "
-                "Positive sales co-occurring with stockout flags are an observed "
-                "diagnostic. Their within-hour timing and cause are not established "
-                "by this validation."
-            ),
+            cooccur_line,
             "",
             "---",
             "",
             "## 7. Observed Data Anomalies",
             "",
-            (
-                "- Non-Negative Discount Rates: Discount rates are non-negative "
-                "across all records in both partitions."
-                if tr_disc_non_neg and ev_disc_non_neg
-                else "- Negative discount rate values detected."
-            ),
-            (
-                f"- Training Partition Discount Ceiling: {tr_gt1_count} records "
-                f"feature discount values exceeding 1.0 (maximum observed discount: "
-                f"{tr_max_disc}). discount > 1.0 is an observed anomaly relative to "
-                "the conventional discount range. Its cause is not established by "
-                "this validation. Raw values are preserved without clipping or "
-                "correction."
-                if tr_gt1_count > 0
-                else (
-                    "- Training Partition Discount Ceiling: All discount values are "
-                    "within the conventional range (<= 1.0)."
-                )
-            ),
-            (
-                f"- Evaluation Partition Discount Ceiling: {ev_gt1_count} records "
-                f"feature discount values exceeding 1.0 (maximum observed discount: "
-                f"{ev_max_disc})."
-                if ev_gt1_count > 0
-                else (
-                    "- Evaluation Partition Discount Ceiling: All discount values "
-                    "conform to the conventional promotional range (<= 1.0)."
-                )
-            ),
+            disc_non_neg_line,
+            tr_gt1_line,
+            ev_gt1_line,
             "",
             "---",
             "",
@@ -2859,55 +3371,16 @@ def _build_data_profile_md(summary: dict[str, Any]) -> str:
                 "`stock_hour6_22_cnt == 0` (series-days free of daytime "
                 "stockouts):"
             ),
-            f"- Total Evaluation Records: {cohort.get('total_rows', 0):,}",
-            (
-                "- Daytime Stockout-Free Cohort: "
-                f"{cohort.get('daytime_no_stockout_rows', 0):,} records "
-                f"({cohort.get('pct_daytime_no_stockout', 0.0)}%)"
-            ),
-            (
-                "- Daytime Stockout-Affected Cohort: "
-                f"{cohort.get('daytime_with_stockout_rows', 0):,} records "
-                f"({cohort.get('pct_daytime_with_stockout', 0.0)}%)"
-            ),
+            *cohort_lines,
             "",
             "---",
             "",
             "## 9. Data Limitations and Modeling Considerations",
             "",
-            (
-                "1. Demand Index Scale: Recorded sales values represent globally "
-                "normalized demand index figures rather than raw physical unit "
-                "quantities. Original physical unit sales cannot be reconstructed "
-                "from the public dataset. Demand forecasting and evaluation operate "
-                "in this normalized space."
-            ),
-            (
-                "2. Daytime Operating Scope: The primary evaluation cohort "
-                "(`stock_hour6_22_cnt == 0`) captures stockout absence across daytime "
-                "operating hours (06:00 through 22:00); daytime availability does not "
-                "imply complete stockout absence during overnight fulfillment and "
-                "restocking windows (22:00 through 06:00)."
-            ),
-            (
-                f"3. Discount Anomalies: {tr_gt1_count} training records feature "
-                f"discount values exceeding 1.0 (reaching {tr_max_disc}). Raw "
-                "observed values are preserved without clipping, truncation, or "
-                "synthetic adjustment."
-                if tr_gt1_count > 0
-                else (
-                    "3. Discount Anomalies: Discount values exceeding 1.0 may occur "
-                    "as observed anomalies relative to the conventional promotional "
-                    "range. Raw values are preserved without clipping or correction."
-                )
-            ),
-            (
-                f"4. Sales and Stockout Co-occurrence: Positive sales co-occur with "
-                f"stockout flags in approximately {tr_pos_st_pct:.2f}% of training "
-                f"stockout hours and {ev_pos_st_pct:.2f}% of evaluation stockout "
-                "hours. Their within-hour timing and cause are not established by "
-                "this validation."
-            ),
+            item1_line,
+            item2_line,
+            item3_line,
+            item4_line,
         ]
     )
 

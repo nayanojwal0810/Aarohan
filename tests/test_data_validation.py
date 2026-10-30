@@ -1099,3 +1099,168 @@ def test_report_correctness(tmp_path: Path):
     assert val_json["overall_status"] == summary["overall_status"]
     train_rows = val_json["train"]["metadata"]["num_rows"]
     assert f"{train_rows:,}" in profile_text
+
+
+def test_pipeline_integration_non_zero_scalar_nulls_and_duplicate_keys(
+    tmp_path: Path,
+):
+    """Test non-zero scalar null count and duplicate keys are mapped accurately."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_path = Path(config["raw_train_path"])
+
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    # Duplicate natural key group by copying the second record
+    for k in train_data:
+        train_data[k].append(train_data[k][1])
+
+    # Add scalar null in precpt
+    train_data["precpt"][0] = None
+
+    write_parquet(train_path, train_data)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "FAIL"
+
+    val_json_path = rep_dir / "tables" / "data_validation.json"
+    val_json = json.loads(val_json_path.read_text(encoding="utf-8"))
+    train_checks = {c["name"]: c for c in val_json["train"]["checks"]}
+
+    assert train_checks["missing_values_scalar"]["status"] == "FAIL"
+    assert train_checks["missing_values_scalar"]["counts"]["null_count"] == 1
+
+    assert train_checks["natural_key_duplicates"]["status"] == "FAIL"
+    assert train_checks["natural_key_duplicates"]["counts"]["duplicate_groups"] == 1
+
+    profile_path = rep_dir / "data_profile.md"
+    profile_text = profile_path.read_text(encoding="utf-8")
+
+    assert (
+        "Scalar missing values detected: 1 in training, 0 in evaluation."
+        in profile_text
+    )
+    assert (
+        "Natural key duplicates detected: 1 in training, 0 in evaluation."
+        in profile_text
+    )
+    assert (
+        "No missing scalar values exist across all columns in either partition."
+        not in profile_text
+    )
+    assert "Zero duplicate records exist on the primary natural key" not in profile_text
+
+
+def test_pipeline_integration_invalid_key_and_date_types(tmp_path: Path):
+    """Test that invalid required key or date type fails safely without crashing."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_path = Path(config["raw_train_path"])
+
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    n = len(train_data["city_id"])
+    train_data["store_id"] = [[1, 2]] * n
+    train_data["dt"] = [1.5] * n
+
+    custom_schema = get_test_arrow_schema()
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("store_id"),
+        pa.field("store_id", pa.list_(pa.int64())),
+    )
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("dt"),
+        pa.field("dt", pa.float64()),
+    )
+    write_parquet(train_path, train_data, schema=custom_schema)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "FAIL"
+
+    train_checks = {c["name"]: c for c in summary["train"]["checks"]}
+    assert train_checks["unique_stores"]["status"] == "FAIL"
+    assert "invalid type" in train_checks["unique_stores"]["explanation"].lower()
+    assert train_checks["unique_series"]["status"] == "FAIL"
+    assert train_checks["series_observation_balance"]["status"] == "FAIL"
+    assert train_checks["daily_record_balance"]["status"] == "FAIL"
+
+    profile_text = (rep_dir / "data_profile.md").read_text(encoding="utf-8")
+    assert not re.search(r"\b(PASS|FAIL|WARNING)\b", profile_text)
+
+
+def test_pipeline_integration_incompatible_cross_partition_key_types(
+    tmp_path: Path,
+):
+    """Test that incompatible cross-partition identifier types fail safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    eval_path = Path(config["raw_eval_path"])
+
+    eval_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-03"
+    )
+    eval_data["store_id"] = [str(s) for s in eval_data["store_id"]]
+
+    custom_schema = get_test_arrow_schema()
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("store_id"),
+        pa.field("store_id", pa.string()),
+    )
+    write_parquet(eval_path, eval_data, schema=custom_schema)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "FAIL"
+
+    cross_checks = {c["name"]: c for c in summary["cross_partition"]["checks"]}
+    assert cross_checks["cross_partition_series_consistency"]["status"] == "FAIL"
+    assert (
+        "incompatible"
+        in cross_checks["cross_partition_series_consistency"]["explanation"].lower()
+    )
+
+
+def test_pipeline_integration_invalid_hourly_sales_diagnostics_unavailable(
+    tmp_path: Path,
+):
+    """Test invalid hourly sales input marks diagnostics as unavailable, not 0.0."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_path = Path(config["raw_train_path"])
+
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    n = len(train_data["city_id"])
+    train_data["hours_sale"] = [["1.0"] * 24] * n
+
+    custom_schema = get_test_arrow_schema()
+    custom_schema = custom_schema.set(
+        custom_schema.get_field_index("hours_sale"),
+        pa.field("hours_sale", pa.list_(pa.string())),
+    )
+    write_parquet(train_path, train_data, schema=custom_schema)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    assert summary["overall_status"] == "FAIL"
+
+    train_diag = summary["train"]["diagnostics"]["stockout_diagnostics"]
+    assert train_diag["cooccurrence_available"] is False
+    assert train_diag["pct_positive_sale_stockout_hours"] is None
+    assert train_diag["positive_sale_stockout_hours"] is None
+    assert train_diag["sales_volume_during_stockout"] is None
+
+    profile_text = (rep_dir / "data_profile.md").read_text(encoding="utf-8")
+    assert (
+        "- Positive Sales During Stockout Flags: Diagnostic unavailable."
+        in profile_text
+    )
+    assert "0.00% of stockout hours" not in profile_text
+
+    manifest_data = json.loads(manifest_p.read_text(encoding="utf-8"))
+    assert not any("0.00%" in lim for lim in manifest_data["known_limitations"])
