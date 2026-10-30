@@ -2,7 +2,7 @@
 
 Provides reusable analytical calculations for overall demand distribution,
 series-level demand metrics, analytical segmentation, entity aggregations,
-and temporal/calendar demand patterns.
+product-level summaries, and temporal/calendar demand patterns.
 """
 
 from __future__ import annotations
@@ -41,6 +41,69 @@ def get_weekday_info(iso_date: str) -> dict[str, Any]:
         "weekday_num": dow,
         "weekday_name": names[dow],
         "is_weekend": dow in (5, 6),
+    }
+
+
+def calculate_overall_demand_summary(
+    con: duckdb.DuckDBPyConnection,
+    parquet_path: str,
+) -> dict[str, Any]:
+    """Calculate overall observation-level demand statistics across the partition.
+
+    Computes distributional metrics directly at the row level across all
+    observations, rather than averaging daily medians or standard deviations.
+
+    Args:
+        con: Configured DuckDB connection.
+        parquet_path: Posix-compliant path string to Parquet file.
+
+    Returns:
+        Dictionary of observation-level distribution statistics and quantiles.
+    """
+    query = f"""
+        SELECT
+            COUNT(*) AS total_observations,
+            ROUND(SUM(sale_amount), 4) AS total_demand,
+            ROUND(AVG(sale_amount), 4) AS mean_demand,
+            ROUND(MEDIAN(sale_amount), 4) AS median_demand,
+            ROUND(STDDEV(sale_amount), 4) AS std_demand,
+            ROUND(MIN(sale_amount), 4) AS min_demand,
+            ROUND(MAX(sale_amount), 4) AS max_demand,
+            ROUND(QUANTILE_CONT(sale_amount, 0.25), 4) AS p25_demand,
+            ROUND(QUANTILE_CONT(sale_amount, 0.50), 4) AS p50_demand,
+            ROUND(QUANTILE_CONT(sale_amount, 0.75), 4) AS p75_demand,
+            ROUND(QUANTILE_CONT(sale_amount, 0.90), 4) AS p90_demand,
+            ROUND(QUANTILE_CONT(sale_amount, 0.95), 4) AS p95_demand,
+            ROUND(QUANTILE_CONT(sale_amount, 0.99), 4) AS p99_demand,
+            SUM(CASE WHEN sale_amount = 0.0 THEN 1 ELSE 0 END)
+                AS zero_sales_count,
+            ROUND(
+                SUM(CASE WHEN sale_amount = 0.0 THEN 1 ELSE 0 END)
+                * 100.0 / COUNT(*),
+                4
+            ) AS zero_sales_pct
+        FROM parquet_scan('{parquet_path}')
+    """
+    row = con.execute(query).fetchone()
+    if row is None:
+        raise ValueError("Failed to retrieve overall demand summary")
+
+    return {
+        "total_observations": int(row[0]),
+        "total_demand": float(row[1]),
+        "mean_demand": float(row[2]),
+        "median_demand": float(row[3]),
+        "std_demand": float(row[4]),
+        "min_demand": float(row[5]),
+        "max_demand": float(row[6]),
+        "p25_demand": float(row[7]),
+        "p50_demand": float(row[8]),
+        "p75_demand": float(row[9]),
+        "p90_demand": float(row[10]),
+        "p95_demand": float(row[11]),
+        "p99_demand": float(row[12]),
+        "zero_sales_count": int(row[13]),
+        "zero_sales_pct": float(row[14]),
     }
 
 
@@ -145,14 +208,98 @@ def calculate_series_profiles(
     df = con.execute(query).df()
 
     # Coefficient of Variation: std / mean.
-    # When mean == 0, CV is undefined; assign 0.0 safely.
+    # When mean == 0, CV is mathematically undefined (NaN), not 0.0.
     cv_series = np.where(
         (df["mean_demand"] > 0) & (df["std_demand"].notna()),
         df["std_demand"] / df["mean_demand"],
-        0.0,
+        np.nan,
     )
     df["cv"] = np.round(cv_series, 4)
     return df
+
+
+def calculate_series_distribution_summary(
+    series_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Calculate summary distribution metrics across store-product series.
+
+    Computes distribution moments (count, mean, std, min, quantiles, max)
+    for demand, dispersion, CV, and stockout exposure across series.
+    Undefined CV values (NaN) are explicitly excluded from CV moments.
+
+    Args:
+        series_df: DataFrame of series profiles.
+
+    Returns:
+        DataFrame summarizing series-level distributional metrics.
+    """
+    cols = [
+        "mean_demand",
+        "median_demand",
+        "std_demand",
+        "cv",
+        "zero_sales_pct",
+        "mean_daytime_stockout_pct",
+        "day_count",
+    ]
+    records = []
+    for col in cols:
+        if col not in series_df.columns:
+            continue
+        valid_s = series_df[col].dropna()
+        records.append(
+            {
+                "metric": col,
+                "valid_series_count": int(len(valid_s)),
+                "mean": round(float(valid_s.mean()), 4),
+                "std": round(float(valid_s.std()), 4),
+                "min": round(float(valid_s.min()), 4),
+                "p10": round(float(valid_s.quantile(0.10)), 4),
+                "p25": round(float(valid_s.quantile(0.25)), 4),
+                "median": round(float(valid_s.median()), 4),
+                "p75": round(float(valid_s.quantile(0.75)), 4),
+                "p90": round(float(valid_s.quantile(0.90)), 4),
+                "p99": round(float(valid_s.quantile(0.99)), 4),
+                "max": round(float(valid_s.max()), 4),
+            }
+        )
+    return pd.DataFrame(records)
+
+
+def calculate_product_summary(
+    con: duckdb.DuckDBPyConnection,
+    parquet_path: str,
+) -> pd.DataFrame:
+    """Calculate product-level demand and stockout metrics across all products.
+
+    Args:
+        con: Configured DuckDB connection.
+        parquet_path: Posix-compliant path string to Parquet file.
+
+    Returns:
+        DataFrame sorted by total demand descending with product statistics.
+    """
+    query = f"""
+        SELECT
+            product_id,
+            COUNT(DISTINCT store_id) AS store_count,
+            COUNT(*) AS observation_count,
+            ROUND(SUM(sale_amount), 4) AS total_demand,
+            ROUND(AVG(sale_amount), 4) AS mean_demand,
+            ROUND(MEDIAN(sale_amount), 4) AS median_demand,
+            ROUND(STDDEV(sale_amount), 4) AS std_demand,
+            ROUND(
+                SUM(CASE WHEN sale_amount = 0.0 THEN 1 ELSE 0 END)
+                * 100.0 / COUNT(*),
+                4
+            ) AS zero_sales_pct,
+            ROUND(AVG(stock_hour6_22_cnt / 16.0) * 100.0, 4)
+                AS mean_daytime_stockout_pct
+        FROM parquet_scan('{parquet_path}')
+        GROUP BY product_id
+        ORDER BY total_demand DESC
+    """
+    return con.execute(query).df()
 
 
 def define_demand_segments(
@@ -166,7 +313,7 @@ def define_demand_segments(
     Args:
         series_df: Series-level profiles DataFrame.
         demand_quantiles: Quantile cutoffs for low/medium/high demand.
-        intermittency_threshold: Zero-sales percentage threshold for intermittency.
+        intermittency_threshold: Zero-sales percentage cutoff for intermittency.
         stockout_quantiles: Quantile cutoffs for stockout exposure tiers.
 
     Returns:

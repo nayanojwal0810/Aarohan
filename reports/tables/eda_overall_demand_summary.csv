@@ -1,0 +1,2 @@
+total_observations,total_demand,mean_demand,median_demand,std_demand,min_demand,max_demand,p25_demand,p50_demand,p75_demand,p90_demand,p95_demand,p99_demand,zero_sales_count,zero_sales_pct
+4500000,4493660.787,0.9986,0.7,1.4067,0.0,44.9,0.4,0.7,1.1,2.0,2.9,5.8,200760,4.4613

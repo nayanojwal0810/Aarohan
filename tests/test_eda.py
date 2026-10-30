@@ -22,6 +22,9 @@ from aarohan.analysis.diagnostics import (
     calculate_zero_sales_diagnostics,
 )
 from aarohan.analysis.profiling import (
+    calculate_overall_demand_summary,
+    calculate_product_summary,
+    calculate_series_distribution_summary,
     calculate_series_profiles,
     define_demand_segments,
     get_weekday_info,
@@ -217,10 +220,30 @@ def test_cv_zero_denominator_handling() -> None:
     """Verify coefficient of variation handling for zero mean demand series."""
     # Series with all 0.0 demand
     records = [
-        {"store_id": 1, "product_id": 100, "sale_amount": 0.0, "stock_hour6_22_cnt": 0},
-        {"store_id": 1, "product_id": 100, "sale_amount": 0.0, "stock_hour6_22_cnt": 0},
-        {"store_id": 1, "product_id": 200, "sale_amount": 1.0, "stock_hour6_22_cnt": 0},
-        {"store_id": 1, "product_id": 200, "sale_amount": 3.0, "stock_hour6_22_cnt": 0},
+        {
+            "store_id": 1,
+            "product_id": 100,
+            "sale_amount": 0.0,
+            "stock_hour6_22_cnt": 0,
+        },
+        {
+            "store_id": 1,
+            "product_id": 100,
+            "sale_amount": 0.0,
+            "stock_hour6_22_cnt": 0,
+        },
+        {
+            "store_id": 1,
+            "product_id": 200,
+            "sale_amount": 1.0,
+            "stock_hour6_22_cnt": 0,
+        },
+        {
+            "store_id": 1,
+            "product_id": 200,
+            "sale_amount": 3.0,
+            "stock_hour6_22_cnt": 0,
+        },
     ]
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -230,12 +253,10 @@ def test_cv_zero_denominator_handling() -> None:
         con = duckdb.connect(database=":memory:")
         try:
             df = calculate_series_profiles(con, pq_path.as_posix())
-            # Product 100 has mean = 0.0, cv should be 0.0 safely
+            # Product 100 has mean = 0.0; CV is mathematically undefined (NaN)
             p100 = df[df["product_id"] == 100].iloc[0]
             assert p100["mean_demand"] == 0.0
-            assert p100["cv"] == 0.0
-            assert not np.isnan(p100["cv"])
-            assert not np.isinf(p100["cv"])
+            assert np.isnan(p100["cv"])
 
             # Product 200 has mean = 2.0, std = sqrt(2) ≈ 1.4142, cv ≈ 0.7071
             p200 = df[df["product_id"] == 200].iloc[0]
@@ -244,6 +265,129 @@ def test_cv_zero_denominator_handling() -> None:
             assert not np.isnan(p200["cv"])
         finally:
             con.close()
+
+
+def test_calculate_overall_demand_summary() -> None:
+    """Verify observation-level demand statistics and quantiles calculation."""
+    # 5 observations: 0.0, 1.0, 2.0, 3.0, 4.0
+    records = [{"sale_amount": float(i)} for i in [0.0, 1.0, 2.0, 3.0, 4.0]]
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pq_path = Path(tmp_dir) / "test_overall.parquet"
+        pd.DataFrame(records).to_parquet(pq_path)
+
+        con = duckdb.connect(database=":memory:")
+        try:
+            summary = calculate_overall_demand_summary(con, pq_path.as_posix())
+            assert summary["total_observations"] == 5
+            assert summary["total_demand"] == 10.0
+            assert summary["mean_demand"] == 2.0
+            assert summary["median_demand"] == 2.0
+            assert summary["min_demand"] == 0.0
+            assert summary["max_demand"] == 4.0
+            assert summary["zero_sales_count"] == 1
+            assert summary["zero_sales_pct"] == 20.0
+            assert summary["p25_demand"] == 1.0
+            assert summary["p75_demand"] == 3.0
+        finally:
+            con.close()
+
+
+def test_calculate_product_summary() -> None:
+    """Verify product-level aggregation across stores."""
+    records = [
+        {
+            "product_id": 10,
+            "store_id": 1,
+            "sale_amount": 2.0,
+            "stock_hour6_22_cnt": 0,
+        },
+        {
+            "product_id": 10,
+            "store_id": 2,
+            "sale_amount": 4.0,
+            "stock_hour6_22_cnt": 4,
+        },
+        {
+            "product_id": 20,
+            "store_id": 1,
+            "sale_amount": 0.0,
+            "stock_hour6_22_cnt": 16,
+        },
+    ]
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        pq_path = Path(tmp_dir) / "test_prod.parquet"
+        pd.DataFrame(records).to_parquet(pq_path)
+
+        con = duckdb.connect(database=":memory:")
+        try:
+            df = calculate_product_summary(con, pq_path.as_posix())
+            assert len(df) == 2
+            p10 = df[df["product_id"] == 10].iloc[0]
+            assert p10["store_count"] == 2
+            assert p10["observation_count"] == 2
+            assert p10["total_demand"] == 6.0
+            assert p10["mean_demand"] == 3.0
+            assert p10["zero_sales_pct"] == 0.0
+
+            p20 = df[df["product_id"] == 20].iloc[0]
+            assert p20["store_count"] == 1
+            assert p20["total_demand"] == 0.0
+            assert p20["zero_sales_pct"] == 100.0
+        finally:
+            con.close()
+
+
+def test_calculate_series_distribution_summary() -> None:
+    """Verify distribution moments calculation across series profiles."""
+    series_data = [
+        {
+            "store_id": 1,
+            "product_id": 1,
+            "mean_demand": 1.0,
+            "median_demand": 1.0,
+            "std_demand": 0.5,
+            "cv": 0.5,
+            "zero_sales_pct": 0.0,
+            "mean_daytime_stockout_pct": 10.0,
+            "day_count": 90,
+        },
+        {
+            "store_id": 1,
+            "product_id": 2,
+            "mean_demand": 3.0,
+            "median_demand": 2.5,
+            "std_demand": 1.5,
+            "cv": 0.5,
+            "zero_sales_pct": 10.0,
+            "mean_daytime_stockout_pct": 20.0,
+            "day_count": 90,
+        },
+        {
+            "store_id": 1,
+            "product_id": 3,
+            "mean_demand": 0.0,
+            "median_demand": 0.0,
+            "std_demand": 0.0,
+            "cv": np.nan,  # Undefined CV should be excluded from CV moments
+            "zero_sales_pct": 100.0,
+            "mean_daytime_stockout_pct": 50.0,
+            "day_count": 90,
+        },
+    ]
+    df = pd.DataFrame(series_data)
+    summary_df = calculate_series_distribution_summary(df)
+    assert len(summary_df) == 7
+
+    cv_row = summary_df[summary_df["metric"] == "cv"].iloc[0]
+    assert cv_row["valid_series_count"] == 2  # Excludes the NaN
+    assert cv_row["mean"] == 0.5
+
+    mean_row = summary_df[summary_df["metric"] == "mean_demand"].iloc[0]
+    assert mean_row["valid_series_count"] == 3
+    assert mean_row["min"] == 0.0
+    assert mean_row["max"] == 3.0
 
 
 def test_hourly_concordance_synthetic() -> None:

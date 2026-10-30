@@ -102,6 +102,10 @@ def calculate_stockout_severity_summary(
 ) -> pd.DataFrame:
     """Calculate demand summary metrics stratified by daytime stockout severity.
 
+    Stratifies observations into three mutually exclusive daytime stockout
+    categories (summing to 100% of observations) and appends the 24-hour full
+    stockout row as an overlapping subset of fully daytime stockouts.
+
     Args:
         con: Configured DuckDB connection.
         parquet_path: Posix-compliant path string to Parquet file.
@@ -119,6 +123,7 @@ def calculate_stockout_severity_summary(
                         THEN 'Partially Stockout-Affected'
                     WHEN stock_hour6_22_cnt = 16 THEN 'Fully Daytime Stockout'
                 END AS stockout_category,
+                'Mutually Exclusive Partition' AS category_type,
                 CASE
                     WHEN stock_hour6_22_cnt = 0 THEN 1
                     WHEN stock_hour6_22_cnt > 0 AND stock_hour6_22_cnt < 16
@@ -132,6 +137,7 @@ def calculate_stockout_severity_summary(
         )
         SELECT
             stockout_category,
+            category_type,
             COUNT(*) AS observation_count,
             ROUND(
                 COUNT(*) * 100.0 / (SELECT COUNT(*) FROM categorized),
@@ -153,15 +159,16 @@ def calculate_stockout_severity_summary(
                 AS mean_daytime_stockout_hours,
             ROUND(AVG(stock_24h_cnt), 4) AS mean_24h_stockout_hours
         FROM categorized
-        GROUP BY stockout_category, category_order
+        GROUP BY stockout_category, category_type, category_order
         ORDER BY category_order ASC
     """
     df = con.execute(query).df()
 
-    # Also compute 24-hour fully stockout as a complementary row
+    # Also compute 24-hour fully stockout as an overlapping subset row
     q_24h = f"""
         SELECT
             'Fully 24-Hour Stockout' AS stockout_category,
+            'Overlapping Subset of Fully Daytime Stockout' AS category_type,
             COUNT(*) AS observation_count,
             ROUND(
                 COUNT(*)
@@ -357,73 +364,73 @@ def compare_train_eval_populations(
             "Observations",
             m_train["rows"],
             m_eval["rows"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out Assessment: 90 dates train vs 7 dates eval",
         ),
         (
             "Dates (Days)",
             m_train["dates"],
             m_eval["dates"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out Assessment: 90 days vs 7 days",
         ),
         (
             "Date Start",
             m_train["min_dt"],
             m_eval["min_dt"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out Assessment: partition start date",
         ),
         (
             "Date End",
             m_train["max_dt"],
             m_eval["max_dt"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out Assessment: partition end date",
         ),
         (
             "Unique Stores",
             m_train["stores"],
             m_eval["stores"],
-            "Descriptive Held-Out Assessment",
+            "Identical entity coverage (898 stores)",
         ),
         (
             "Unique Products",
             m_train["products"],
             m_eval["products"],
-            "Descriptive Held-Out Assessment",
+            "Identical entity coverage (865 products)",
         ),
         (
             "Store-Product Series",
             m_train["series"],
             m_eval["series"],
-            "Descriptive Held-Out Assessment",
+            "Identical series coverage (50,000 series)",
         ),
         (
             "Mean Daily Demand",
             m_train["mean_sale"],
             m_eval["mean_sale"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out: +19.48% higher mean sales in eval",
         ),
         (
             "Median Daily Demand",
             m_train["median_sale"],
             m_eval["median_sale"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out: +14.29% higher median sales in eval",
         ),
         (
             "Std Dev Daily Demand",
             m_train["std_sale"],
             m_eval["std_sale"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out: +35.89% higher volatility in eval",
         ),
         (
             "Zero-Sales Share (%)",
             m_train["zero_sales_pct"],
             m_eval["zero_sales_pct"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out: lower zero share in eval",
         ),
         (
             "Daytime Stockout-Free Share (%)",
             m_train["stockout_free_pct"],
             m_eval["stockout_free_pct"],
-            "Descriptive Held-Out Assessment",
+            "Descriptive Held-Out: higher stockout-free share in eval",
         ),
         (
             "Partially Stockout-Affected Share (%)",

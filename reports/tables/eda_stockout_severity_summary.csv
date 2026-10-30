@@ -1,5 +1,5 @@
-stockout_category,observation_count,observation_pct,mean_sale,median_sale,std_sale,min_sale,max_sale,zero_sales_count,zero_sales_pct,mean_daytime_stockout_hours,mean_24h_stockout_hours
-Daytime Stockout-Free,2507994,55.7332,0.9745,0.68,1.2758,0.0,44.9,46944.0,1.8718,0.0,1.2591
-Partially Stockout-Affected,1810215,40.227,1.1276,0.7,1.5974,0.0,40.4,5771.0,0.3188,6.2992,10.7071
-Fully Daytime Stockout,181791,4.0398,0.046,0.0,0.2013,0.0,15.4,148045.0,81.4369,16.0,23.8551
-Fully 24-Hour Stockout,170717,3.7937,0.0369,0.0,0.1948,0.0,15.4,145521.0,85.2411,16.0,24.0
+stockout_category,category_type,observation_count,observation_pct,mean_sale,median_sale,std_sale,min_sale,max_sale,zero_sales_count,zero_sales_pct,mean_daytime_stockout_hours,mean_24h_stockout_hours
+Daytime Stockout-Free,Mutually Exclusive Partition,2507994,55.7332,0.9745,0.68,1.2758,0.0,44.9,46944.0,1.8718,0.0,1.2591
+Partially Stockout-Affected,Mutually Exclusive Partition,1810215,40.227,1.1276,0.7,1.5974,0.0,40.4,5771.0,0.3188,6.2992,10.7071
+Fully Daytime Stockout,Mutually Exclusive Partition,181791,4.0398,0.046,0.0,0.2013,0.0,15.4,148045.0,81.4369,16.0,23.8551
+Fully 24-Hour Stockout,Overlapping Subset of Fully Daytime Stockout,170717,3.7937,0.0369,0.0,0.1948,0.0,15.4,145521.0,85.2411,16.0,24.0
