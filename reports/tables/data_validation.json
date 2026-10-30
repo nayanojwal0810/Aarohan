@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-30T12:51:50.796465+00:00",
+  "timestamp": "2026-10-30T13:35:47.748273+00:00",
   "overall_status": "WARNING",
   "train": {
     "dataset_name": "train",
@@ -12,7 +12,7 @@
     },
     "metadata": {
       "name": "train",
-      "path": "D:\\Aarohan\\data\\raw\\train.parquet",
+      "path": "data/raw/train.parquet",
       "file_size_bytes": 106436287,
       "file_size_mb": 101.51,
       "sha256": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d",
@@ -74,7 +74,7 @@
         "status": "PASS",
         "expected": "Existing regular file",
         "actual": "train.parquet",
-        "explanation": "File verified at D:\\Aarohan\\data\\raw\\train.parquet",
+        "explanation": "File verified at data/raw/train.parquet",
         "counts": {}
       },
       {
@@ -82,7 +82,7 @@
         "status": "PASS",
         "expected": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d",
         "actual": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d",
-        "explanation": "Cryptographic SHA-256 digest matches authoritative benchmark",
+        "explanation": "Cryptographic SHA-256 digest matches official benchmark",
         "counts": {}
       },
       {
@@ -108,7 +108,7 @@
       {
         "name": "schema_missing_columns",
         "status": "PASS",
-        "expected": "All required columns present",
+        "expected": "All declared columns present",
         "actual": "No missing columns",
         "explanation": "All required schema columns are present",
         "counts": {}
@@ -126,7 +126,7 @@
         "status": "PASS",
         "expected": "All column types matching specification",
         "actual": "All types match",
-        "explanation": "All column types match the logical Arrow schema specification",
+        "explanation": "All column types match the Arrow schema specification",
         "counts": {}
       },
       {
@@ -234,7 +234,7 @@
         "status": "PASS",
         "expected": "Exactly 90 observations per series",
         "actual": "Min: 90, Max: 90",
-        "explanation": "Each of the 50,000 series contains 90 to 90 observations",
+        "explanation": "Series observation balance across 50,000 series: min=90, max=90",
         "counts": {
           "min_days_per_series": 90,
           "max_days_per_series": 90
@@ -243,43 +243,56 @@
       {
         "name": "daily_record_balance",
         "status": "PASS",
-        "expected": "Exactly 50,000 records per date",
-        "actual": "Min: 50,000, Max: 50,000",
-        "explanation": "Daily record counts across all 90 dates: 50,000 to 50,000",
-        "counts": {}
+        "expected": "Exactly 50000 observations per calendar day",
+        "actual": "Min: 50000, Max: 50000",
+        "explanation": "Daily record counts across 90 days: min=50000, max=50000",
+        "counts": {
+          "min_daily_records": 50000,
+          "max_daily_records": 50000
+        }
       },
       {
         "name": "hourly_array_lengths",
         "status": "PASS",
-        "expected": "Exactly 24 values per array",
-        "actual": "All 24 elements",
+        "expected": "Exactly 24 elements per array with non-null parents",
+        "actual": "All 24 elements with non-null parents",
         "explanation": "Array length validation across hours_sale and hours_stock_status",
         "counts": {
-          "invalid_length_rows": 0
+          "invalid_length_rows": 0,
+          "null_parent_rows": 0
         }
       },
       {
         "name": "hourly_sales_validity",
         "status": "PASS",
-        "expected": "Non-negative, finite, non-null values",
-        "actual": "0 negative/non-finite rows",
-        "explanation": "Hourly sales element values are valid and non-negative",
-        "counts": {}
+        "expected": "Finite, non-negative, and non-null values",
+        "actual": "Negative: 0, Non-finite: 0, Child nulls: 0, Parent nulls: 0",
+        "explanation": "Hourly sales values must be finite, non-negative real numbers",
+        "counts": {
+          "negative_sales_rows": 0,
+          "non_finite_sales_rows": 0,
+          "null_child_sales_rows": 0,
+          "null_parent_sales_rows": 0
+        }
       },
       {
         "name": "hourly_stock_status_binary",
         "status": "PASS",
-        "expected": "Strictly binary values in {0, 1}",
-        "actual": "0 non-binary rows",
-        "explanation": "Hourly stockout status elements are strictly binary flags (0=in-stock, 1=stockout)",
-        "counts": {}
+        "expected": "Strictly binary values in {0, 1} with zero nulls",
+        "actual": "Non-binary: 0, Child nulls: 0, Parent nulls: 0",
+        "explanation": "Hourly stockout flags must be strictly binary integers {0, 1}",
+        "counts": {
+          "non_binary_rows": 0,
+          "null_child_stock_rows": 0,
+          "null_parent_stock_rows": 0
+        }
       },
       {
         "name": "daily_hourly_sales_reconciliation",
         "status": "PASS",
         "expected": "sale_amount == sum(hours_sale) within tolerance 1e-05",
         "actual": "0 mismatches (max diff: 7.11e-15, mean diff: 4.73e-17)",
-        "explanation": "Daily recorded sales reconcile with the sum of hourly sales within float precision",
+        "explanation": "Daily recorded sales reconcile with sum of hourly sales",
         "counts": {
           "mismatch_count": 0,
           "max_diff": 7.105427357601002e-15,
@@ -292,7 +305,7 @@
         "status": "PASS",
         "expected": "stock_hour6_22_cnt == sum(hours_stock_status[6:22])",
         "actual": "0 mismatches (max diff: 0.0)",
-        "explanation": "Daytime stockout count aligns with the sum of hours 6 through 21",
+        "explanation": "Daytime stockout count aligns with sum of hours 6 through 21",
         "counts": {
           "mismatch_count": 0,
           "max_diff": 0.0
@@ -309,9 +322,9 @@
       {
         "name": "discount_ceiling_anomaly",
         "status": "WARNING",
-        "expected": "discount <= 1.0 (standard promotional discount convention)",
+        "expected": "discount <= 1.0 (conventional promotional range)",
         "actual": "34 records with discount > 1.0 (max: 1.088)",
-        "explanation": "Found 34 records exceeding 1.0 with max 1.088. These represent isolated pricing surcharge / markup anomalies for product SKU 37 preserved without clipping per specification.",
+        "explanation": "Found 34 records with discount > 1.0 (maximum 1.088). discount > 1.0 is an observed anomaly relative to the conventional discount range. Its cause is not established by this validation. Raw values are preserved without clipping or correction.",
         "counts": {
           "discount_gt_1_count": 34,
           "max_discount": 1.088
@@ -343,7 +356,7 @@
     },
     "metadata": {
       "name": "eval",
-      "path": "D:\\Aarohan\\data\\raw\\eval.parquet",
+      "path": "data/raw/eval.parquet",
       "file_size_bytes": 8440124,
       "file_size_mb": 8.05,
       "sha256": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e",
@@ -405,7 +418,7 @@
         "status": "PASS",
         "expected": "Existing regular file",
         "actual": "eval.parquet",
-        "explanation": "File verified at D:\\Aarohan\\data\\raw\\eval.parquet",
+        "explanation": "File verified at data/raw/eval.parquet",
         "counts": {}
       },
       {
@@ -413,7 +426,7 @@
         "status": "PASS",
         "expected": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e",
         "actual": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e",
-        "explanation": "Cryptographic SHA-256 digest matches authoritative benchmark",
+        "explanation": "Cryptographic SHA-256 digest matches official benchmark",
         "counts": {}
       },
       {
@@ -439,7 +452,7 @@
       {
         "name": "schema_missing_columns",
         "status": "PASS",
-        "expected": "All required columns present",
+        "expected": "All declared columns present",
         "actual": "No missing columns",
         "explanation": "All required schema columns are present",
         "counts": {}
@@ -457,7 +470,7 @@
         "status": "PASS",
         "expected": "All column types matching specification",
         "actual": "All types match",
-        "explanation": "All column types match the logical Arrow schema specification",
+        "explanation": "All column types match the Arrow schema specification",
         "counts": {}
       },
       {
@@ -565,7 +578,7 @@
         "status": "PASS",
         "expected": "Exactly 7 observations per series",
         "actual": "Min: 7, Max: 7",
-        "explanation": "Each of the 50,000 series contains 7 to 7 observations",
+        "explanation": "Series observation balance across 50,000 series: min=7, max=7",
         "counts": {
           "min_days_per_series": 7,
           "max_days_per_series": 7
@@ -574,43 +587,56 @@
       {
         "name": "daily_record_balance",
         "status": "PASS",
-        "expected": "Exactly 50,000 records per date",
-        "actual": "Min: 50,000, Max: 50,000",
-        "explanation": "Daily record counts across all 7 dates: 50,000 to 50,000",
-        "counts": {}
+        "expected": "Exactly 50000 observations per calendar day",
+        "actual": "Min: 50000, Max: 50000",
+        "explanation": "Daily record counts across 7 days: min=50000, max=50000",
+        "counts": {
+          "min_daily_records": 50000,
+          "max_daily_records": 50000
+        }
       },
       {
         "name": "hourly_array_lengths",
         "status": "PASS",
-        "expected": "Exactly 24 values per array",
-        "actual": "All 24 elements",
+        "expected": "Exactly 24 elements per array with non-null parents",
+        "actual": "All 24 elements with non-null parents",
         "explanation": "Array length validation across hours_sale and hours_stock_status",
         "counts": {
-          "invalid_length_rows": 0
+          "invalid_length_rows": 0,
+          "null_parent_rows": 0
         }
       },
       {
         "name": "hourly_sales_validity",
         "status": "PASS",
-        "expected": "Non-negative, finite, non-null values",
-        "actual": "0 negative/non-finite rows",
-        "explanation": "Hourly sales element values are valid and non-negative",
-        "counts": {}
+        "expected": "Finite, non-negative, and non-null values",
+        "actual": "Negative: 0, Non-finite: 0, Child nulls: 0, Parent nulls: 0",
+        "explanation": "Hourly sales values must be finite, non-negative real numbers",
+        "counts": {
+          "negative_sales_rows": 0,
+          "non_finite_sales_rows": 0,
+          "null_child_sales_rows": 0,
+          "null_parent_sales_rows": 0
+        }
       },
       {
         "name": "hourly_stock_status_binary",
         "status": "PASS",
-        "expected": "Strictly binary values in {0, 1}",
-        "actual": "0 non-binary rows",
-        "explanation": "Hourly stockout status elements are strictly binary flags (0=in-stock, 1=stockout)",
-        "counts": {}
+        "expected": "Strictly binary values in {0, 1} with zero nulls",
+        "actual": "Non-binary: 0, Child nulls: 0, Parent nulls: 0",
+        "explanation": "Hourly stockout flags must be strictly binary integers {0, 1}",
+        "counts": {
+          "non_binary_rows": 0,
+          "null_child_stock_rows": 0,
+          "null_parent_stock_rows": 0
+        }
       },
       {
         "name": "daily_hourly_sales_reconciliation",
         "status": "PASS",
         "expected": "sale_amount == sum(hours_sale) within tolerance 1e-05",
         "actual": "0 mismatches (max diff: 7.11e-15, mean diff: 5.54e-17)",
-        "explanation": "Daily recorded sales reconcile with the sum of hourly sales within float precision",
+        "explanation": "Daily recorded sales reconcile with sum of hourly sales",
         "counts": {
           "mismatch_count": 0,
           "max_diff": 7.105427357601002e-15,
@@ -623,7 +649,7 @@
         "status": "PASS",
         "expected": "stock_hour6_22_cnt == sum(hours_stock_status[6:22])",
         "actual": "0 mismatches (max diff: 0.0)",
-        "explanation": "Daytime stockout count aligns with the sum of hours 6 through 21",
+        "explanation": "Daytime stockout count aligns with sum of hours 6 through 21",
         "counts": {
           "mismatch_count": 0,
           "max_diff": 0.0
@@ -690,8 +716,8 @@
         "name": "cross_partition_series_consistency",
         "status": "PASS",
         "expected": "100% series overlap between train and evaluation",
-        "actual": "Common series: 50,000, Train-only: 0, Eval-only: 0",
-        "explanation": "Training and evaluation partitions contain identical 50,000 store-product series",
+        "actual": "Common: 50,000, Train-only: 0, Eval-only: 0",
+        "explanation": "Training and evaluation partitions contain identical store-product series",
         "counts": {
           "train_series": 50000,
           "eval_series": 50000,

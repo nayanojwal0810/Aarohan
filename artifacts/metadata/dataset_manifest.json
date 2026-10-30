@@ -3,11 +3,11 @@
   "provider": "Dingdong Inc.",
   "source_url": "https://huggingface.co/datasets/Dingdong-Inc/FreshRetailNet-50K",
   "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
-  "inspection_date": "2026-10-30T12:51:50.796465+00:00",
+  "inspection_date": "2026-10-30T13:35:47.748273+00:00",
   "files": {
     "train": {
       "name": "train",
-      "path": "D:\\Aarohan\\data\\raw\\train.parquet",
+      "path": "data/raw/train.parquet",
       "file_size_bytes": 106436287,
       "file_size_mb": 101.51,
       "sha256": "6706832db892bbae4969c19d87e07975d2543d2ba7d7d4756360654785de5a3d",
@@ -65,7 +65,7 @@
     },
     "eval": {
       "name": "eval",
-      "path": "D:\\Aarohan\\data\\raw\\eval.parquet",
+      "path": "data/raw/eval.parquet",
       "file_size_bytes": 8440124,
       "file_size_mb": 8.05,
       "sha256": "1b118840664280c6b88bffc84c80ee1f54c05d911e354b7599e5da10995e960e",
@@ -128,9 +128,9 @@
     "store_product_series": 50000
   },
   "known_limitations": [
-    "Sales values are globally normalized by a proprietary coefficient; raw physical pack counts cannot be reconstructed.",
-    "34 training records feature discount values > 1.0 (max 1.088 for SKU 37) reflecting documented pricing surcharge anomalies preserved without clipping.",
-    "Approximately 2.87% of stockout hours in training exhibit positive sales due to intra-hour depletion prior to stockout flagging.",
-    "Only the daytime window with stock_hour6_22_cnt == 0 (206,562 rows / 59.02% of evaluation) represents zero daytime stockouts; daytime stockout freedom does not guarantee 24-hour stockout freedom."
+    "Sales values are globally normalized demand index values; original physical unit counts cannot be reconstructed.",
+    "34 training records feature discount values > 1.0 (max 1.088 for SKU 37), which is an observed anomaly relative to the conventional discount range. Raw values are preserved without clipping or correction.",
+    "Positive sales co-occur with stockout flags in approximately 2.87% of training stockout hours and 3.10% of evaluation stockout hours. Their within-hour timing and cause are not established by this validation.",
+    "The project's selected primary evaluation cohort uses stock_hour6_22_cnt == 0 representing daytime stockout-free series-days; daytime availability does not guarantee 24-hour stockout absence."
   ]
 }

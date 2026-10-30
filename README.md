@@ -97,21 +97,57 @@ Aarohan/
 │   └── aarohan/                # Core Python package
 │       ├── __init__.py         # Package root and version
 │       ├── config.py           # Configuration loader and path resolver
-│       └── logging_config.py   # Reusable structured logging setup
+│       ├── logging_config.py   # Reusable structured logging setup
+│       └── data/               # Data ingestion, schema, and validation
+│           ├── __init__.py     # Data module exports
+│           ├── dataset.py      # Metadata classes and validation results
+│           ├── load.py         # Memory-efficient chunked loading & hashing
+│           └── validate.py     # Batch validation, integrity, and reporting
 │
 ├── notebooks/                  # Exploratory notebooks
 ├── scripts/                    # Command-line execution scripts
-├── tests/                      # Automated unit tests
+│   └── inspect_data.py         # Data inspection and validation pipeline CLI
+├── tests/                      # Automated unit and integration tests
 ├── reports/                    # Generated project reports
 │   ├── figures/                # Output plots and diagrams
-│   └── tables/                 # Benchmark tables and metrics
+│   ├── tables/                 # Benchmark tables and validation metrics
+│   │   └── data_validation.json # Machine-readable validation audit results
+│   └── data_profile.md         # Comprehensive data profile report
 ├── artifacts/                  # Serialized outputs and experiment records (untracked)
+│   └── metadata/               # Dataset manifests and experiment logs
+│       └── dataset_manifest.json # Cryptographic hashes, sizes, and metadata
 └── docs/                       # Technical notes and architecture documentation
+    └── data_dictionary.md      # Full 19-column business and schema definitions
 ```
 
 ---
 
-## 7. Environment Setup
+## 7. Data Inspection and Validation
+
+To execute the data ingestion and validation pipeline across both raw Parquet partitions:
+
+```powershell
+python scripts/inspect_data.py
+```
+
+Optional CLI flags:
+* `--config <path>`: Path to custom YAML configuration file (default: `configs/data.yaml`).
+* `--reports-dir <path>`: Custom destination for reports (default: `reports/`).
+* `--manifest-path <path>`: Custom destination for manifest (default: `artifacts/metadata/dataset_manifest.json`).
+* `--verbose` / `-v`: Enable detailed debug logging.
+* `--log-file <path>`: Write logging output to a specified log file.
+
+### Generated Deliverables
+
+The pipeline generates four self-contained, reproducible deliverables:
+1. `reports/tables/data_validation.json`: Complete machine-readable audit report containing check statuses, record counts, and reconciliation metrics.
+2. `reports/data_profile.md`: Human-readable dataset profile summarizing partition sizes, unique series, date continuity, stockout distributions, and cohort breakdowns.
+3. `docs/data_dictionary.md`: Comprehensive reference detailing all 19 columns, logical data types, business definitions, and modeling notes.
+4. `artifacts/metadata/dataset_manifest.json`: Cryptographic SHA-256 digests, file sizes, entity counts, and known limitations.
+
+---
+
+## 8. Environment Setup
 
 ### Prerequisites
 * Windows 11 / Linux / macOS
@@ -148,13 +184,13 @@ Aarohan/
 
 ---
 
-## 8. Project Status
+## 9. Project Status
 
-Aarohan is under active development. Project scaffolding, dependency management, configuration validation, logging safeguards, and initial test suites are operational.
+Stage 1 (Data Ingestion and Integrity Validation) is fully implemented and verified. All 51 automated unit and integration tests pass cleanly, strict code quality rules are enforced, and the complete audit deliverable suite is operational.
 
 ---
 
-## 9. License
+## 10. License
 
 * Code in this repository is licensed under the [MIT License](LICENSE).
 * The underlying benchmark dataset (FreshRetailNet-50K) is subject to its own separate [CC BY 4.0 License](https://creativecommons.org/licenses/by/4.0/).

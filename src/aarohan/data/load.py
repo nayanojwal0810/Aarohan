@@ -1,4 +1,4 @@
-"""Reusable utilities for dataset path resolution, hashing, metadata, and data loading."""
+"""Reusable utilities for dataset path resolution, hashing, and loading."""
 
 from __future__ import annotations
 

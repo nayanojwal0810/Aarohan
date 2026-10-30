@@ -1,12 +1,14 @@
 """Unit tests for Aarohan data ingestion, validation, and reporting pipeline.
 
-Tests use synthetic Parquet fixtures constructed via PyArrow in temporary directories (tmp_path).
-Covers all integrity, schema, continuity, hourly sequences, anomalies, and cohort checks.
+Tests use synthetic Parquet fixtures constructed via PyArrow in temporary
+directories (tmp_path). Covers all integrity, schema, continuity, hourly
+sequences, anomalies, cohort checks, and safe pipeline failure handling.
 """
 
 from __future__ import annotations
 
 import datetime
+import json
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,7 @@ from aarohan.data.load import (
 )
 from aarohan.data.validate import (
     calculate_evaluation_cohort,
+    run_validation_pipeline,
     validate_anomalies,
     validate_cross_partition_consistency,
     validate_entity_and_time_series,
@@ -470,7 +473,7 @@ def test_evaluation_cohort_breakdown(
 def test_cross_partition_consistency(
     tmp_path: Path, duckdb_con: duckdb.DuckDBPyConnection
 ):
-    """Test cross-partition consistency checks on disjoint series or overlapping dates."""
+    """Test cross-partition checks on disjoint series or overlapping dates."""
     # Clean train: 2 series, dates 2024-01-01 to 2024-01-02
     train_data = make_synthetic_records(
         num_series=2, num_days=2, start_date="2024-01-01"
@@ -503,9 +506,319 @@ def test_sha256_checksum_mismatch(tmp_path: Path):
     data = make_synthetic_records()
     p = write_parquet(tmp_path / "chk.parquet", data)
 
-    checks, meta = validate_file_level(
-        p,
-        expected_sha256="0000000000000000000000000000000000000000000000000000000000000000",
-    )
+    bad_hash = "0" * 64
+    checks, meta = validate_file_level(p, expected_sha256=bad_hash)
     chk_check = next(c for c in checks if c.name == "sha256_checksum")
     assert chk_check.status == ValidationStatus.FAIL.value
+
+
+# =========================================================================
+# Task 1: Hourly Non-Finite & Array Integrity Unit Tests
+# =========================================================================
+
+
+def test_nan_in_hours_sale_fails(tmp_path: Path):
+    """Test that NaN in hours_sale results in FAIL and is reported."""
+    data = make_synthetic_records()
+    data["hours_sale"][0][5] = float("nan")
+    p = write_parquet(tmp_path / "nan.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=5)
+    val_check = next(c for c in checks if c.name == "hourly_sales_validity")
+    rec_check = next(c for c in checks if c.name == "daily_hourly_sales_reconciliation")
+    assert val_check.status == ValidationStatus.FAIL.value
+    assert val_check.counts["non_finite_sales_rows"] >= 1
+    assert rec_check.status == ValidationStatus.FAIL.value
+
+
+def test_pos_inf_in_hours_sale_fails(tmp_path: Path):
+    """Test that +Inf in hours_sale results in FAIL and is reported."""
+    data = make_synthetic_records()
+    data["hours_sale"][0][5] = float("inf")
+    p = write_parquet(tmp_path / "pos_inf.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=5)
+    val_check = next(c for c in checks if c.name == "hourly_sales_validity")
+    assert val_check.status == ValidationStatus.FAIL.value
+    assert val_check.counts["non_finite_sales_rows"] >= 1
+
+
+def test_neg_inf_in_hours_sale_fails(tmp_path: Path):
+    """Test that -Inf in hours_sale results in FAIL and is reported."""
+    data = make_synthetic_records()
+    data["hours_sale"][0][5] = float("-inf")
+    p = write_parquet(tmp_path / "neg_inf.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=5)
+    val_check = next(c for c in checks if c.name == "hourly_sales_validity")
+    assert val_check.status == ValidationStatus.FAIL.value
+    assert val_check.counts["non_finite_sales_rows"] >= 1
+
+
+def test_child_null_in_hours_sale_fails(tmp_path: Path):
+    """Test that null element within hours_sale results in FAIL."""
+    data = make_synthetic_records()
+    data["hours_sale"][0][3] = None
+    p = write_parquet(tmp_path / "child_null_sale.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=5)
+    val_check = next(c for c in checks if c.name == "hourly_sales_validity")
+    rec_check = next(c for c in checks if c.name == "daily_hourly_sales_reconciliation")
+    assert val_check.status == ValidationStatus.FAIL.value
+    assert val_check.counts["null_child_sales_rows"] >= 1
+    assert rec_check.status == ValidationStatus.FAIL.value
+
+
+def test_child_null_in_hours_stock_status_fails(tmp_path: Path):
+    """Test that null element within hours_stock_status results in FAIL."""
+    data = make_synthetic_records()
+    data["hours_stock_status"][0][7] = None
+    p = write_parquet(tmp_path / "child_null_stock.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=5)
+    st_check = next(c for c in checks if c.name == "hourly_stock_status_binary")
+    cnt_check = next(c for c in checks if c.name == "stockout_count_reconciliation")
+    assert st_check.status == ValidationStatus.FAIL.value
+    assert st_check.counts["null_child_stock_rows"] >= 1
+    assert cnt_check.status == ValidationStatus.FAIL.value
+
+
+def test_parent_null_in_hourly_arrays_fails(tmp_path: Path):
+    """Test that null parent array in hourly columns results in FAIL."""
+    data = make_synthetic_records()
+    data["hours_sale"][0] = None
+    p = write_parquet(tmp_path / "parent_null.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=5)
+    len_check = next(c for c in checks if c.name == "hourly_array_lengths")
+    assert len_check.status == ValidationStatus.FAIL.value
+    assert len_check.counts["null_parent_rows"] >= 1
+
+
+def test_finite_sale_amount_with_non_finite_hourly_fails_reconciliation(
+    tmp_path: Path,
+):
+    """Test reconciliation fails when sale_amount is finite but hourly has NaN."""
+    data = make_synthetic_records(sale_val=24.0)
+    data["hours_sale"][0][0] = float("nan")
+    p = write_parquet(tmp_path / "finite_sale_nan_hourly.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=5)
+    rec_check = next(c for c in checks if c.name == "daily_hourly_sales_reconciliation")
+    assert rec_check.status == ValidationStatus.FAIL.value
+    assert rec_check.counts["mismatch_count"] >= 1
+
+
+def test_batch_with_mixed_valid_and_invalid_rows(tmp_path: Path):
+    """Test batch processing isolates invalid rows without dropping valid ones."""
+    data = make_synthetic_records(num_series=3, num_days=2)
+    # Row 0: non-finite sales
+    data["hours_sale"][0][0] = float("nan")
+    # Row 1: negative sales
+    data["hours_sale"][1][0] = -1.0
+    # Rows 2-5: completely valid
+    p = write_parquet(tmp_path / "mixed_batch.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=10)
+    val_check = next(c for c in checks if c.name == "hourly_sales_validity")
+    assert val_check.status == ValidationStatus.FAIL.value
+    assert val_check.counts["non_finite_sales_rows"] == 1
+    assert val_check.counts["negative_sales_rows"] == 1
+
+
+def test_fallback_path_with_malformed_array_lengths(tmp_path: Path):
+    """Test fallback path triggered by malformed array length reports failure."""
+    data = make_synthetic_records(num_series=2, num_days=2)
+    # Row 0: length 10 instead of 24 triggers fallback
+    data["hours_sale"][0] = [1.0] * 10
+    p = write_parquet(tmp_path / "fallback_len.parquet", data)
+
+    checks, _ = validate_hourly_data(p, batch_size=10)
+    len_check = next(c for c in checks if c.name == "hourly_array_lengths")
+    rec_check = next(c for c in checks if c.name == "daily_hourly_sales_reconciliation")
+    assert len_check.status == ValidationStatus.FAIL.value
+    assert len_check.counts["invalid_length_rows"] == 1
+    assert rec_check.status == ValidationStatus.FAIL.value
+
+
+# =========================================================================
+# Task 2: Safe Pipeline Failure Integration Tests
+# =========================================================================
+
+
+def make_valid_pipeline_config(
+    tmp_path: Path,
+) -> tuple[dict[str, Any], Path, Path]:
+    """Create valid synthetic datasets and return pipeline config and paths."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    rep_dir = tmp_path / "reports"
+    rep_dir.mkdir(parents=True, exist_ok=True)
+    art_dir = tmp_path / "artifacts" / "metadata"
+    art_dir.mkdir(parents=True, exist_ok=True)
+
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    eval_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-03"
+    )
+
+    train_path = write_parquet(data_dir / "train.parquet", train_data)
+    eval_path = write_parquet(data_dir / "eval.parquet", eval_data)
+
+    config = {
+        "raw_train_path": str(train_path),
+        "raw_eval_path": str(eval_path),
+        "expected_schema": BASE_SCHEMA_DICT,
+        "dataset_size": {
+            "train": {"rows": 4, "columns": 19, "dates": 2, "series": 2},
+            "eval": {"rows": 4, "columns": 19, "dates": 2, "series": 2},
+        },
+        "expected_entities": {
+            "stores": 2,
+            "products": 2,
+            "store_product_series": 2,
+        },
+        "hourly_settings": {
+            "sales_reconciliation_tolerance": 1e-5,
+            "daytime_stockout_start": 6,
+            "daytime_stockout_end": 22,
+        },
+        "processing": {
+            "batch_size": 10,
+            "duckdb_threads": 1,
+            "duckdb_memory_limit": "128MB",
+        },
+    }
+    return config, rep_dir, art_dir / "dataset_manifest.json"
+
+
+def _verify_deliverables_on_failure(
+    summary: dict[str, Any], rep_dir: Path, manifest_path: Path
+) -> None:
+    """Verify that all deliverables are generated even on validation failure."""
+    assert summary["overall_status"] == "FAIL"
+    val_json_path = rep_dir / "tables" / "data_validation.json"
+    profile_path = rep_dir / "data_profile.md"
+    assert val_json_path.is_file()
+    assert profile_path.is_file()
+    assert manifest_path.is_file()
+
+    # Verify JSON is valid and strictly compliant (no NaN/Inf)
+    val_data = json.loads(val_json_path.read_text(encoding="utf-8"))
+    assert val_data["overall_status"] == "FAIL"
+    manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest_data["dataset_name"] == "FreshRetailNet-50K"
+
+
+def test_pipeline_missing_train_file(tmp_path: Path):
+    """Test pipeline handles missing training Parquet file safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    Path(config["raw_train_path"]).unlink()
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+def test_pipeline_missing_eval_file(tmp_path: Path):
+    """Test pipeline handles missing evaluation Parquet file safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    Path(config["raw_eval_path"]).unlink()
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+def test_pipeline_corrupt_parquet_file(tmp_path: Path):
+    """Test pipeline handles corrupted Parquet file safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    Path(config["raw_train_path"]).write_bytes(b"CORRUPTED_NOT_A_VALID_PARQUET_FILE")
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+def test_pipeline_missing_schema_column(tmp_path: Path):
+    """Test pipeline handles missing schema column safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    del train_data["discount"]
+    write_parquet(Path(config["raw_train_path"]), train_data)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+def test_pipeline_unexpected_schema_column(tmp_path: Path):
+    """Test pipeline handles unexpected extra column safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    train_data["unexpected_col"] = [1.0] * len(train_data["city_id"])
+    write_parquet(Path(config["raw_train_path"]), train_data)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+def test_pipeline_wrong_column_type(tmp_path: Path):
+    """Test pipeline handles column with wrong logical data type safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    # store_id as string instead of int64
+    train_data["store_id"] = [str(x) for x in train_data["store_id"]]
+    custom_schema = get_test_arrow_schema()
+    idx = custom_schema.get_field_index("store_id")
+    custom_schema = custom_schema.set(idx, pa.field("store_id", pa.string()))
+    write_parquet(Path(config["raw_train_path"]), train_data, schema=custom_schema)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+def test_pipeline_invalid_date_strings(tmp_path: Path):
+    """Test pipeline handles unparseable date strings safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    train_data["dt"][0] = "INVALID_DATE_FORMAT"
+    write_parquet(Path(config["raw_train_path"]), train_data)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)
+
+
+def test_pipeline_malformed_hourly_arrays(tmp_path: Path):
+    """Test pipeline handles malformed hourly arrays safely."""
+    config, rep_dir, manifest_p = make_valid_pipeline_config(tmp_path)
+    train_data = make_synthetic_records(
+        num_series=2, num_days=2, start_date="2024-01-01"
+    )
+    train_data["hours_sale"][0] = [1.0] * 12
+    write_parquet(Path(config["raw_train_path"]), train_data)
+
+    summary = run_validation_pipeline(
+        config=config, reports_dir=rep_dir, manifest_path=manifest_p
+    )
+    _verify_deliverables_on_failure(summary, rep_dir, manifest_p)

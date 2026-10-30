@@ -12,12 +12,31 @@ import logging
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 
 from aarohan.config import load_config
 from aarohan.data.validate import run_validation_pipeline
 from aarohan.logging_config import setup_logging
+
+
+def get_process_memory_stats(process: psutil.Process) -> dict[str, Any]:
+    """Return process memory statistics honestly labeled by platform."""
+    mem_info = process.memory_info()
+    end_rss_mb = mem_info.rss / (1024 * 1024)
+    peak_wset = getattr(mem_info, "peak_wset", None)
+    if peak_wset is not None:
+        peak_mb = peak_wset / (1024 * 1024)
+        peak_label = "Peak Process Working Set (RSS)"
+    else:
+        peak_mb = end_rss_mb
+        peak_label = "Process RSS (end-of-run)"
+    return {
+        "end_rss_mb": end_rss_mb,
+        "peak_mb": peak_mb,
+        "peak_label": peak_label,
+    }
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -41,7 +60,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--manifest-path",
         type=str,
         default=None,
-        help="Custom path to store dataset manifest (default: artifacts/metadata/dataset_manifest.json)",
+        help=(
+            "Custom path to store dataset manifest "
+            "(default: artifacts/metadata/dataset_manifest.json)"
+        ),
     )
     parser.add_argument(
         "--verbose",
@@ -94,8 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     elapsed = time.perf_counter() - start_time
-    mem_info = process.memory_info()
-    peak_rss_mb = mem_info.rss / (1024 * 1024)
+    mem_stats = get_process_memory_stats(process)
 
     # Console summary output
     overall_status = summary.get("overall_status", "UNKNOWN")
@@ -109,7 +130,9 @@ def main(argv: list[str] | None = None) -> int:
     print("=" * 70)
     print(f"Overall Status:            {overall_status}")
     print(f"Execution Duration:        {elapsed:.2f} seconds")
-    print(f"Peak Process RSS Memory:   {peak_rss_mb:.2f} MB")
+    peak_hdr = f"{mem_stats['peak_label']}:"
+    print(f"{peak_hdr:<32}{mem_stats['peak_mb']:.2f} MB")
+    print(f"{'Process RSS (end-of-run):':<32}{mem_stats['end_rss_mb']:.2f} MB")
     print("-" * 70)
 
     # Partition breakdowns
@@ -122,22 +145,41 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[{name}] -> Status: {status}")
         if meta:
             print(f"  File:                    {meta.get('path', 'N/A')}")
-            print(
-                f"  Rows x Columns:          {meta.get('num_rows', 0):,} x {meta.get('num_columns', 0)}"
-            )
+            rows_cols = f"{meta.get('num_rows', 0):,} x {meta.get('num_columns', 0)}"
+            print(f"  Rows x Columns:          {rows_cols}")
             print(f"  Unique Series:           {meta.get('num_series', 0):,}")
-            print(
-                f"  Date Range:              {meta.get('min_dt', 'N/A')} to {meta.get('max_dt', 'N/A')} ({meta.get('num_days', 0)} days)"
+            dt_range = (
+                f"{meta.get('min_dt', 'N/A')} to {meta.get('max_dt', 'N/A')} "
+                f"({meta.get('num_days', 0)} days)"
             )
-            print(
-                f"  SHA-256:                 {meta.get('sha256', 'N/A')[:16]}... (match)"
+            print(f"  Date Range:              {dt_range}")
+            sha_val = meta.get("sha256", "N/A")
+            sha_short = f"{sha_val[:16]}..." if len(sha_val) > 16 else sha_val
+            sha_check = next(
+                (
+                    c
+                    for c in part.get("checks", [])
+                    if c.get("name") == "sha256_checksum"
+                ),
+                None,
             )
+            sha_match = (
+                " (match)"
+                if sha_check and sha_check.get("status") == "PASS"
+                else (
+                    " (mismatch)"
+                    if sha_check and sha_check.get("status") == "FAIL"
+                    else ""
+                )
+            )
+            print(f"  SHA-256:                 {sha_short}{sha_match}")
         checks = part.get("checks", [])
         passed = sum(1 for c in checks if c["status"] == "PASS")
         warnings = sum(1 for c in checks if c["status"] == "WARNING")
         failed = sum(1 for c in checks if c["status"] == "FAIL")
         print(
-            f"  Checks:                  {passed} PASS, {warnings} WARNING, {failed} FAIL"
+            f"  Checks:                  {passed} PASS, "
+            f"{warnings} WARNING, {failed} FAIL"
         )
         print("-" * 70)
 
@@ -145,25 +187,39 @@ def main(argv: list[str] | None = None) -> int:
     cross_checks = cross.get("checks", [])
     cross_passed = sum(1 for c in cross_checks if c["status"] == "PASS")
     cross_failed = sum(1 for c in cross_checks if c["status"] == "FAIL")
+    series_check = next(
+        (
+            c
+            for c in cross_checks
+            if c.get("name") == "cross_partition_series_consistency"
+        ),
+        {},
+    )
+    temp_check = next(
+        (c for c in cross_checks if c.get("name") == "temporal_partition_separation"),
+        {},
+    )
     print(f"[Cross-Partition Integrity] -> Status: {cross.get('status', 'N/A')}")
-    print(
-        "  Series Overlap:          50,000 series (100% overlap, 0 train-only, 0 eval-only)"
-    )
-    print(
-        "  Temporal Boundary:       train max (2024-06-25) < eval min (2024-06-26) (0 overlap)"
-    )
+    if series_check:
+        print(f"  Series Overlap:          {series_check.get('actual', 'N/A')}")
+    if temp_check:
+        print(f"  Temporal Boundary:       {temp_check.get('actual', 'N/A')}")
     print(f"  Checks:                  {cross_passed} PASS, {cross_failed} FAIL")
     print("-" * 70)
 
     # Cohort breakdown
     print("[Primary Evaluation Cohort (stock_hour6_22_cnt == 0)]")
     print(f"  Total Evaluation Rows:   {cohort.get('total_rows', 0):,}")
-    print(
-        f"  Daytime No-Stockout:     {cohort.get('daytime_no_stockout_rows', 0):,} ({cohort.get('pct_daytime_no_stockout', 0)}%)"
+    no_st = (
+        f"{cohort.get('daytime_no_stockout_rows', 0):,} "
+        f"({cohort.get('pct_daytime_no_stockout', 0)}%)"
     )
-    print(
-        f"  Daytime Stockout:        {cohort.get('daytime_with_stockout_rows', 0):,} ({cohort.get('pct_daytime_with_stockout', 0)}%)"
+    with_st = (
+        f"{cohort.get('daytime_with_stockout_rows', 0):,} "
+        f"({cohort.get('pct_daytime_with_stockout', 0)}%)"
     )
+    print(f"  Daytime No-Stockout:     {no_st}")
+    print(f"  Daytime Stockout:        {with_st}")
     print("-" * 70)
 
     # Deliverables generated
@@ -180,7 +236,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if overall_status == "WARNING":
         logger.warning(
-            "Data validation pipeline completed with status WARNING (documented anomalies preserved)."
+            "Data validation pipeline completed with status WARNING "
+            "(documented anomalies preserved)."
         )
     else:
         logger.info("Data validation pipeline completed successfully with status PASS.")
