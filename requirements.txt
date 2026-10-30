@@ -1,0 +1,16 @@
+# Aarohan Direct Dependencies (Tested on Python 3.12.5)
+
+# Core Runtime Dependencies
+pandas==3.1.0
+numpy==2.5.4
+pyarrow==26.0.0
+duckdb==2.0.0
+scipy==1.18.1
+scikit-learn==1.9.1
+lightgbm==4.7.0
+pyyaml==6.0.3
+psutil==7.2.2
+
+# Development & Testing Dependencies
+pytest==9.2.0
+ruff==0.17.3

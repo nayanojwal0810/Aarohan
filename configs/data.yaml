@@ -1,0 +1,25 @@
+# Data Configuration for Aarohan
+# Intelligent Demand Planning for Perishable Retail
+
+raw_train_path: "data/raw/train.parquet"
+raw_eval_path: "data/raw/eval.parquet"
+interim_data_dir: "data/interim"
+processed_data_dir: "data/processed"
+
+date_column: "dt"
+entity_key:
+  - "store_id"
+  - "product_id"
+target_column: "sale_amount"
+stockout_hourly_column: "hours_stock_status"
+stockout_daytime_count_column: "stock_hour6_22_cnt"
+
+expected_rows:
+  train: 4500000
+  eval: 350000
+
+date_boundaries:
+  train_start: "2024-03-28"
+  train_end: "2024-06-25"
+  eval_start: "2024-06-26"
+  eval_end: "2024-07-02"

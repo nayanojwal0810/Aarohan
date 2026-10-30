@@ -1,0 +1,40 @@
+# Training & Model Configuration for Aarohan
+# Initial settings defined in the approved project blueprint
+
+random_seed: 42
+model_type: "LightGBM"
+forecast_horizon_days: 7
+
+reproducibility:
+  seed: 42
+  deterministic: true
+  n_jobs: -1
+
+validation_folds:
+  - fold: 1
+    train_end: "2024-05-27"
+    val_start: "2024-05-28"
+    val_end: "2024-06-03"
+    val_days: 7
+
+  - fold: 2
+    train_end: "2024-06-03"
+    val_start: "2024-06-04"
+    val_end: "2024-06-10"
+    val_days: 7
+
+  - fold: 3
+    train_end: "2024-06-10"
+    val_start: "2024-06-11"
+    val_end: "2024-06-17"
+    val_days: 7
+
+  - fold: 4
+    train_end: "2024-06-17"
+    val_start: "2024-06-18"
+    val_end: "2024-06-24"
+    val_days: 7
+
+pilot:
+  sample_series_count: 1500
+  sampling_strategy: "stockout_stratified"

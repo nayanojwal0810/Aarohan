@@ -1,0 +1,80 @@
+# Python virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# Python byte-code and cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Testing and linting caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE and editor settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/*
+
+# Environment variables and credentials
+.env
+.env.*
+*.secret
+*.pem
+*.key
+
+# Internal blueprint and private instructions (MUST NEVER BE COMMITTED)
+Aarohan_Project_Blueprint.txt
+
+# Dataset and data files (MUST NEVER BE COMMITTED)
+data/raw/*.parquet
+data/interim/
+data/processed/
+*.parquet
+
+# Large artifacts, model binaries, and serialized caches
+artifacts/models/
+artifacts/checkpoints/
+*.bin
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.joblib
+
+# Local logs and temporary files
+logs/
+*.log
+tmp/
+temp/
+*.tmp
